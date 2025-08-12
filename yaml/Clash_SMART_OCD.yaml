@@ -184,7 +184,7 @@ rule-anchor:
   mrsipcidr: &mrsipcidr {type: http, interval: 86400, behavior: ipcidr, format: mrs}
 
 rule-providers:
-  Directi_OCD_Domain:
+  Direct_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Direct_OCD_Domain.mrs'
     url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Direct/Direct_OCD_Domain.mrs'
@@ -313,7 +313,7 @@ rule-providers:
 # 规则指向
 rules:
   ### 非 IP 类规则
-  - RULE-SET, Directi_OCD_Domain, 🎯 直连
+  - RULE-SET, Direct_OCD_Domain, 🎯 直连
   - RULE-SET, adrules_OCD_Domain, 🚫 广告拦截
   - RULE-SET, YouTube_OCD_Domain, 📹 YouTube
   - RULE-SET, BiliBili_OCD_Domain, 📺 Bilibili
