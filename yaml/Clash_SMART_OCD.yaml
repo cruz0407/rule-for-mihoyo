@@ -1,5 +1,5 @@
 # mihomo 配置
-# 日期：2025-08-08
+# 日期：2025-08-13
 # 原作者：iKeLee
 # CRUZ修改
 port: 7890
@@ -157,7 +157,7 @@ proxy-groups:
   - {name: 📹 YouTube, type: select, proxies: [🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
   - {name: 📺 Bilibili, type: select, proxies: [🎯 直连,⏱香港智选,⏱台湾智选]}
   - {name: 🎥 Netflix, type: select, proxies: [🚀 节点选择,🔧 手动选择,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
-  - {name: 🤖 OpenAI, type: select, proxies: [🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
+  - {name: 🤖 OpenAI, type: select, proxies: [⏱美国智选,🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选]}
   - {name: 🚂 Steam, type: select, proxies: [🚀 节点选择,🎯 直连,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
   - {name: 📲 Telegram, type: select, proxies: [🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
   - {name: 🎵 TikTok, type: select, proxies: [🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
@@ -184,10 +184,10 @@ rule-anchor:
   mrsipcidr: &mrsipcidr {type: http, interval: 86400, behavior: ipcidr, format: mrs}
 
 rule-providers:
-#  Directi_OCD_Domain:
-#    <<: *mrsdomain
-#    path: './rules/Direct_OCD_Domain.mrs'
-#    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Direct/Direct_OCD_Domain.mrs'
+  Directi_OCD_Domain:
+    <<: *mrsdomain
+    path: './rules/Direct_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Direct/Direct_OCD_Domain.mrs'
 
   adrules_OCD_Domain:
     <<: *mrsdomain
@@ -197,123 +197,123 @@ rule-providers:
   YouTube_OCD_Domain:
     <<: *mrsdomain
     path: './rules/YouTube_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/YouTube/YouTube_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/YouTube/YouTube_OCD_Domain.mrs'
 
   YouTube_OCD_IP:
     <<: *mrsipcidr
     path: './rules/YouTube_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/YouTube/YouTube_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/YouTube/YouTube_OCD_IP.mrs'
 
   BiliBili_OCD_Domain:
     <<: *mrsdomain
     path: './rules/BiliBili_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/BiliBili/BiliBili_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/BiliBili/BiliBili_OCD_Domain.mrs'
 
   BiliBili_OCD_IP:
     <<: *mrsipcidr
     path: './rules/BiliBili_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/BiliBili/BiliBili_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/BiliBili/BiliBili_OCD_IP.mrs'
 
   OpenAI_OCD_Domain:
     <<: *mrsdomain
     path: './rules/OpenAI_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/OpenAI/OpenAI_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/OpenAI/OpenAI_OCD_Domain.mrs'
 
   OpenAI_OCD_IP:
     <<: *mrsipcidr
     path: './rules/OpenAI_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/OpenAI/OpenAI_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/OpenAI/OpenAI_OCD_IP.mrs'
 
   TikTok_OCD_Domain:
     <<: *mrsdomain
     path: './rules/TikTok_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/TikTok/TikTok_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/TikTok/TikTok_OCD_Domain.mrs'
 
   Steam_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Steam_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Steam/Steam_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Steam/Steam_OCD_Domain.mrs'
 
   SteamCN_OCD_Domain:
     <<: *mrsdomain
     path: './rules/SteamCN_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/SteamCN/SteamCN_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/SteamCN/SteamCN_OCD_Domain.mrs'
 
   Netflix_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Netflix_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Netflix/Netflix_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Netflix/Netflix_OCD_Domain.mrs'
 
   Netflix_OCD_IP:
     <<: *mrsipcidr
     path: './rules/Netflix_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Netflix/Netflix_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Netflix/Netflix_OCD_IP.mrs'
 
   Telegram_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Telegram_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Telegram/Telegram_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Telegram/Telegram_OCD_Domain.mrs'
 
   Telegram_OCD_IP:
     <<: *mrsipcidr
     path: './rules/Telegram_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Telegram/Telegram_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Telegram/Telegram_OCD_IP.mrs'
 
   Apple_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Apple_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Apple/Apple_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Apple/Apple_OCD_Domain.mrs'
 
   Apple_OCD_IP:
     <<: *mrsipcidr
     path: './rules/Apple_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Apple/Apple_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Apple/Apple_OCD_IP.mrs'
 
   Microsoft_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Microsoft_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Microsoft/Microsoft_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Microsoft/Microsoft_OCD_Domain.mrs'
 
   Global_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Global_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Global/Global_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Global/Global_OCD_Domain.mrs'
 
   Global_OCD_IP:
     <<: *mrsipcidr
     path: './rules/Global_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Global/Global_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Global/Global_OCD_IP.mrs'
     
   ChinaMax_OCD_Domain:
     <<: *mrsdomain
     path: './rules/ChinaMax_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/ChinaMax/ChinaMax_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/ChinaMax/ChinaMax_OCD_Domain.mrs'
 
   ChinaMax_OCD_IP:
     <<: *mrsipcidr
     path: './rules/ChinaMax_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/ChinaMax/ChinaMax_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/ChinaMax/ChinaMax_OCD_IP.mrs'
 
   Download_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Download_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Download/Download_OCD_Domain.mrs'   
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Download/Download_OCD_Domain.mrs'   
 
   LAN_OCD_Domain:
     <<: *mrsdomain
     path: './rules/Lan_OCD_Domain.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Lan/Lan_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Lan/Lan_OCD_Domain.mrs'
   
   LAN_OCD_IP:
     <<: *mrsipcidr
     path: './rules/Lan_OCD_IP.mrs'
-    url: 'https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Lan/Lan_OCD_IP.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Lan/Lan_OCD_IP.mrs'
 
 
 # 规则指向
 rules:
   ### 非 IP 类规则
-#  - RULE-SET, Directi_OCD_Domain, 🎯 直连
+  - RULE-SET, Directi_OCD_Domain, 🎯 直连
   - RULE-SET, adrules_OCD_Domain, 🚫 广告拦截
   - RULE-SET, YouTube_OCD_Domain, 📹 YouTube
   - RULE-SET, BiliBili_OCD_Domain, 📺 Bilibili
