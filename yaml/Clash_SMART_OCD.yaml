@@ -1,5 +1,5 @@
 # mihomo 配置
-# 日期：2025-08-19
+# 日期：2025-10-04
 # 原作者：iKeLee
 # CRUZ修改
 port: 7890
@@ -60,7 +60,7 @@ sniffer:
 tun:
   enable: true
   # system/gvisor/mixed
-  stack: system
+  stack: mixed
   dns-hijack: ["any:53", "tcp://any:53"]
   auto-route: true
   auto-redirect: true
@@ -82,7 +82,7 @@ dns:
   cache-algorithm: arc
   prefer-h3: true
   listen: 0.0.0.0:1053
-  ipv6: false
+  ipv6: true
   respect-rules: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
@@ -94,13 +94,9 @@ dns:
     - "+.msftncsi.com"
     - "time.*.com"
     - "+.market.xiaomi.com"
-  nameserver-policy:
-    'rule-set:ChinaMax_OCD_Domain':
-    - https://doh.pub/dns-query
-    - https://dns.alidns.com/dns-query
   fallback:
   - https://1.1.1.1/dns-query   # Cloudflare
-  - https://8.8.8.8/dns-query   # Google
+  - https://dns.google/dns-query   # Google
   fallback-filter:
     geoip: true
     geoip-code: CN
@@ -112,17 +108,18 @@ dns:
   proxy-server-nameserver:
     - https://doh.pub/dns-query
   nameserver:
+    - tls://dns.alidns.com
     - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
 
 
 # 锚点 - 节点订阅的参数 [每小时更新一次订阅节点,每 6 秒一次健康检查]
-NodeParam: &NodeParam {type: http, interval: 3600, health-check: {enable: true, url: 'http://www.google.com/blank.html', interval: 300}}
+NodeParam: &NodeParam {type: http, interval: 3600, health-check: {enable: true, url: 'http://www.google.com/blank.html', interval: 1800}}
 
 # 锚点 - 节点订阅
 proxy-providers: 
   Airport1:
-    url: '机场订阅链接'
+    url: '机场链接'
     <<: *NodeParam
 
 # 节点信息
@@ -150,7 +147,7 @@ FallBack: &FallBack {type: fallback, interval: 6, lazy: true, url: 'http://www.g
 # 锚点 - 负载均衡参数 [每 6 秒一次惰性健康检查,时延超过 2 秒判定为失败,失败 3 次则自动触发健康检查]
 LoadBalance: &LoadBalance {type: load-balance, interval: 6, lazy: true, url: 'http://www.google.com/blank.html', disable-udp: false, strategy: consistent-hashing, timeout: 2000, max-failed-times: 3, hidden: true, include-all-providers: true}
 # 锚点 - 智选参数 [每 30 秒一次惰性健康检查,时延超过 2 秒判定为失败,失败 3 次则自动触发健康检查]
-Smartselect: &Smartselect {type: smart, policy-priority: "福利:0.5;Anycast:0.65", uselightgbm: true, collectdata: true, include-all: true, interval: 30}
+Smartselect: &Smartselect {type: smart, policy-priority: "福利:0.4;Anycast:0.65", uselightgbm: true, collectdata: true, include-all: true, interval: 1800}
 # 锚点 - 规则参数 [每小时更新一次订阅规则,更新规则时使用直连策略]
 
 
@@ -163,7 +160,8 @@ proxy-groups:
   - {name: 🤖 OpenAI, type: select, proxies: [⏱美国智选,🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选]}
   - {name: 🚂 Steam, type: select, proxies: [🚀 节点选择,🎯 直连,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
   - {name: 📲 Telegram, type: select, proxies: [🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
-  - {name: 🎵 TikTok, type: select, proxies: [🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
+  - {name: 📡 GitHub, type: select, proxies: [⏱美国智选,🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选]}
+  - {name: 🎵 TikTok, type: select, proxies: [🎯 直连,🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
   - {name: 🍎 Apple, type: select, proxies: [🎯 直连,🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
   - {name: 🪟 Microsoft, type: select, proxies: [🎯 直连,🚀 节点选择,⏱全球智选,⏱香港智选,⏱台湾智选,⏱日本智选,⏱韩国智选,⏱新加坡智选,⏱美国智选]}
   - {name: 🚫 广告拦截, type: select, proxies: [REJECT,🎯 直连]}
@@ -226,6 +224,11 @@ rule-providers:
     <<: *mrsipcidr
     path: './rules/OpenAI_OCD_IP.mrs'
     url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/OpenAI/OpenAI_OCD_IP.mrs'
+
+  GitHub_OCD_Domain:
+    <<: *mrsdomain
+    path: './rules/GitHub_OCD_Domain.mrs'
+    url: 'https://github.com/cruz0407/Rule-for-OCD/raw/refs/heads/master/rule/Clash/GitHub/GitHub_OCD_Domain.mrs'
 
   TikTok_OCD_Domain:
     <<: *mrsdomain
@@ -321,6 +324,7 @@ rules:
   - RULE-SET, YouTube_OCD_Domain, 📹 YouTube
   - RULE-SET, BiliBili_OCD_Domain, 📺 Bilibili
   - RULE-SET, OpenAI_OCD_Domain, 🤖 OpenAI
+  - RULE-SET, GitHub_OCD_Domain, 📡 GitHub
   - RULE-SET, TikTok_OCD_Domain, 🎵 TikTok
   - RULE-SET, Steam_OCD_Domain, 🚂 Steam
   - RULE-SET, SteamCN_OCD_Domain, 🎯 直连
@@ -332,8 +336,7 @@ rules:
   - RULE-SET, ChinaMax_OCD_Domain, 🎯 直连
   - RULE-SET, Download_OCD_Domain, 🎯 直连
   - RULE-SET, LAN_OCD_Domain, 🎯 直连
-
-    ### IP 类规则
+  ### IP 类规则
   - RULE-SET, YouTube_OCD_IP, 📹 YouTube,no-resolve
   - RULE-SET, BiliBili_OCD_IP, 📺 Bilibili,no-resolve
   - RULE-SET, OpenAI_OCD_IP, 🤖 OpenAI,no-resolve
