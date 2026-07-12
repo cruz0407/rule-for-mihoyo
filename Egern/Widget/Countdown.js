@@ -339,7 +339,7 @@ export default async function (ctx) {
   // ── Small 尺寸渲染 ───────────────────────────────────────────────────────
   if (isSmall) {
     const pinnedNames = pinnedHolidays.filter(n => pinnedMap.has(n));
-    const smallRows = CATEGORY_CONFIG.map(cfg => {
+    const smallRows = CATEGORY_CONFIG.filter(cfg => !(cfg.key === "exclusive" && !showExclusiveDates)).map(cfg => {
       const fests = result[cfg.key].filter(i => !pinnedNames.includes(i.name)).slice(0, 2);
       if (fests.length === 0) return null;
       return mkRow([
@@ -373,6 +373,7 @@ export default async function (ctx) {
   let gridRows = [];
 
   for (const cfg of CATEGORY_CONFIG) {
+    if (cfg.key === "exclusive" && !showExclusiveDates) continue;
     const limit   = isLarge ? 7 : (cfg.key === "exclusive" ? 6 : 3);
     const rawText = formatStr(cfg.key, limit);
     if (!rawText) continue;
