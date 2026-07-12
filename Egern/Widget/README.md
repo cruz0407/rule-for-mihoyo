@@ -91,10 +91,10 @@ PINNED_HOLIDAY=春节,国庆节
 
 全面网络状态检测小组件，支持 Medium / Large 尺寸。
 
-> 🔄 合并自三个上游项目，取其精华：
+> 🔄 合并自上游项目，取其精华：
 > - **UI 框架 + 策略组 + 延迟/出口 IP** 来自 [lylywayr/NetWork-Module](https://github.com/lylywayr/NetWork-Module)
-> - **精准流媒体/AI 检测** 来自 [xcgtb/Egern-Widgets](https://github.com/xcgtb/Egern-Widgets)
-> - **双源纯净度评分** 来自 [mickeu/Egern](https://github.com/mickeu/Egern)
+> - **精准流媒体/AI 检测逻辑** 来自 [xcgtb/Egern-Widgets](https://github.com/xcgtb/Egern-Widgets) + [mickeu/Egern](https://github.com/mickeu/Egern)
+> - **纯净度评分**：ipapi.is + proxycheck.io + ip-api 多源交叉，ISP 来自 ipapi.co
 
 ## 环境变量
 
@@ -105,6 +105,7 @@ PINNED_HOLIDAY=春节,国庆节
 | `AI` | 字符串 | 空 | AI 检测策略组。`POLICY` 为空时生效 |
 | `YS` | 字符串 | `0` | `1` 启用 IP 隐私打码（如 `123.123.*.*`） |
 | `XY` | 字符串 | 空 | 手动指定协议（VLESS / Trojan / HY2 / AnyTLS） |
+| `LOCAL_POLICY` | 字符串 | `DIRECT` | 本地网络检测策略。默认直连，路由器有代理可改为 `DIRECT` 或具体策略名 |
 
 ## 检测能力
 
@@ -121,13 +122,15 @@ PINNED_HOLIDAY=春节,国庆节
 - 网络属性（住宅 / 移动 / 机房）
 
 ### 延迟
-- 直连延迟：5 个大陆端点取平均（miui / vivo / baidu / qq / aliyun）
-- 代理延迟：4 个全球端点取平均（CF / gstatic / google / CF favicon）
+- 直连延迟：5 个大陆端点各站点独立 pill 展示（miui / vivo / baidu / qq / aliyun）
+- 代理延迟：4 个全球端点各站点独立 pill 展示（CF / gstatic / google / CF CDN）
+- 每站点按 ms 数值绿（≤180）/ 黄（≤350）/ 红（>350）着色
 
 ### 纯净度（Pro 增强）
-- **ippure.com** fraudScore + isResidential
-- **ipapi.is** abuser_score 等级
-- 双源交叉验证，取代原版粗糙自建评分
+- **ipapi.is** abuser_score 等级（Very High / High / Elevated / Low）
+- **proxycheck.io** proxy / vpn / tor / residential 标记
+- **ip-api** hosting / mobile 标记
+- 多源交叉验证，取代原版粗糙自建评分
 
 ### 流媒体解锁（Pro 增强）
 

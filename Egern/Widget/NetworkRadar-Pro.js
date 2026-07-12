@@ -37,6 +37,7 @@ export default async function (ctx) {
   const AI_POLICY = clean(env.AI);
   const MASK_IP = clean(env.YS) === "1";
   const FORCE_PROTOCOL = clean(env.XY);
+  const LOCAL_POLICY = clean(env.LOCAL_POLICY) || "DIRECT";
 
   const TIMEOUT = 4500;
   const POLICY_PROBE_TIMEOUT = 1800;
@@ -231,7 +232,7 @@ export default async function (ctx) {
         timeout: TIMEOUT,
         redirect: "follow",
         credentials: "omit",
-        policy: "DIRECT",
+        policy: LOCAL_POLICY,
         headers: {
           "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
           Accept: "application/json,text/plain,text/html,*/*",
@@ -282,6 +283,17 @@ export default async function (ctx) {
     }
 
     return Object.assign(options, extra || {});
+  }
+
+  function latencyLabel(url) {
+    const h = url.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace("www.", "");
+    const map = {
+      "connect.rom.miui.com": "miui", "wifi.vivo.com.cn": "vivo",
+      "www.baidu.com": "baidu", "www.qq.com": "qq", "www.aliyun.com": "aliyun",
+      "cp.cloudflare.com": "CF", "www.gstatic.com": "gstatic",
+      "www.google.com": "google", "www.cloudflare.com": "CFcdn"
+    };
+    return map[h] || h.split(".")[0];
   }
 
   async function getJSON(url) {
@@ -918,7 +930,7 @@ export default async function (ctx) {
       ok: true,
       ms: best.ms,
       target: best.url,
-      details: passed.map(function(p) { return { url: p.url, ms: p.ms }; })
+      details: passed.map(function(p) { return { url: p.url, ms: p.ms, label: latencyLabel(p.url) }; })
     };
   }
 
@@ -1765,13 +1777,6 @@ export default async function (ctx) {
             ),
 
             metricBox(
-              "clock",
-              "直连延迟",
-              localLatency.ok ? localLatency.ms + "ms" : "失败",
-              localLatencyColor
-            ),
-
-            metricBox(
               "network",
               "IPV4/IPV6",
               (hasIPv4 ? "✓" : "×") + "/" + (hasIPv6 ? "✓" : "×"),
@@ -1794,13 +1799,31 @@ export default async function (ctx) {
             )
           ],
           { gap: 2 }
-        )
+        ),
+
+        delayPillRow(localLatency, localLatencyColor)
       ],
       {
         flex: 1,
-        height: 100
+        height: 108
       }
     );
+  }
+
+  function delayPillRow(latencyData, tone) {
+    const details = (latencyData && latencyData.details) || [];
+    if (details.length === 0) {
+      return text("延迟检测失败", 5, "medium", C.red, { maxLines: 1 });
+    }
+    const pills = details.map(function(d) {
+      const ms = d.ms || 0;
+      const siteColor = ms <= 180 ? C.green : ms <= 350 ? C.amber : C.red;
+      return row([
+        text(d.label, 5.2, "semibold", C.subtext, { maxLines: 1 }),
+        text(ms + "ms", 5.2, "semibold", siteColor, { maxLines: 1 })
+      ], { gap: 2, padding: [1, 3], backgroundColor: C.tileBg, borderRadius: 4 });
+    });
+    return row(pills, { gap: 3, flexWrap: "wrap" });
   }
 
   function flagBox() {
@@ -1981,11 +2004,13 @@ export default async function (ctx) {
             )
           ],
           { gap: 2 }
-        )
+        ),
+
+        delayPillRow(proxyLatency, proxyLatencyColor)
       ],
       {
         flex: 1,
-        height: 100,
+        height: 108,
         padding: [5, 6],
         gap: 3
       }
@@ -2331,30 +2356,6 @@ export default async function (ctx) {
   }
 
 
-  function latencyRow(label, icon, latencyData, tone) {
-    const details = (latencyData && latencyData.details) || [];
-    if (details.length === 0) {
-      return row([
-        image(icon, C.muted, 9, 9),
-        text(label + " 延迟", 6.5, "medium", C.muted, { maxLines: 1 }),
-        spacer(),
-        text("检测失败", 6, "medium", C.red)
-      ], { gap: 4, padding: [1, 0] });
-    }
-    const hostsText = details.map(function(d) {
-      const host = d.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace('www.', '');
-      return host + " " + d.ms + "ms";
-    }).join("  ");
-    return col([
-      row([
-        image(icon, tone, 9, 9),
-        text(label + " 延迟", 6.5, "semibold", tone, { maxLines: 1 }),
-        spacer(),
-        text(latencyData.ok ? latencyData.ms + "ms" : "超时", 6.5, "bold", latencyData.ok ? tone : C.red)
-      ], { gap: 4 }),
-      text(hostsText, 5, "medium", C.subtext, { maxLines: 2, minScale: 0.65 })
-    ], { gap: 2 });
-  }
 
   const dashboard = col(
     [
@@ -2366,14 +2367,12 @@ export default async function (ctx) {
           proxyCard()
         ],
         {
-          height: 100,
+          height: 108,
           gap: 6,
           alignItems: "start"
         }
       ),
 
-      latencyRow("代理", "paperplane.fill", proxyLatency, proxyLatencyColor),
-      latencyRow("直连", "house.fill", localLatency, localLatencyColor),
       row(
         [
           serviceCard("流媒体解锁", "play.rectangle.fill", media, C.blue),
@@ -2389,7 +2388,7 @@ export default async function (ctx) {
       footer()
     ],
     {
-      height: 415,
+      height: 355,
       padding: [8, 8],
       gap: 6
     }
