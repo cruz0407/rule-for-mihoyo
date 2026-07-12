@@ -975,11 +975,13 @@ export default async function (ctx) {
           country: d.country || "",
           city: d.city || "",
           isResidential: d.isResidential,
-          fraudScore: Number.isFinite(Number(d.fraudScore)) ? Number(d.fraudScore) : null
+          fraudScore: Number.isFinite(Number(d.fraudScore)) ? Number(d.fraudScore) : null,
+          org: d.org || d.asn || "",
+          asn: d.asn || ""
         };
       }
     } catch (_) {}
-    return { ok: false, ip: "", countryCode: "", country: "", city: "", isResidential: null, fraudScore: null };
+    return { ok: false, ip: "", countryCode: "", country: "", city: "", isResidential: null, fraudScore: null, org: "", asn: "" };
   }
 
   async function getIPApiAbuserScore(ip) {
@@ -1296,6 +1298,9 @@ export default async function (ctx) {
     }
     if (ippureData.fraudScore !== null) {
       exit._fraudScore = ippureData.fraudScore;
+    }
+    if (ippureData.org && ippureData.org.length >= 3) {
+      exit.isp = ippureData.org;
     }
   }
 
@@ -4702,22 +4707,39 @@ function gatewayLabel(value) {
 
 function shortISP(value) {
   const isp = clean(value);
-
-  if (!isp || isp === "未知组织") {
-    return "未知";
-  }
-
-  if (isp.length <= 12) {
-    return isp;
-  }
-
-  const words = isp.split(/\s+/);
-
-  if (words.length > 1) {
-    return words[0];
-  }
-
-  return isp.slice(0, 11) + "…";
+  if (!isp || isp === '未知组织') return '未知';
+  const s = String(isp);
+  if (/it7/i.test(s)) return 'IT7 Network';
+  if (/dmit/i.test(s)) return 'DMIT Network';
+  if (/cloudflare/i.test(s)) return 'Cloudflare';
+  if (/akamai/i.test(s)) return 'Akamai';
+  if (/amazon|aws/i.test(s)) return 'AWS';
+  if (/google/i.test(s)) return 'Google Cloud';
+  if (/microsoft|azure/i.test(s)) return 'Azure';
+  if (/alibaba|aliyun/i.test(s)) return '阿里云';
+  if (/tencent/i.test(s)) return '腾讯云';
+  if (/oracle/i.test(s)) return 'Oracle Cloud';
+  if (/vultr/i.test(s)) return 'Vultr';
+  if (/digitalocean/i.test(s)) return 'DigitalOcean';
+  if (/linode/i.test(s)) return 'Linode';
+  if (/hetzner/i.test(s)) return 'Hetzner';
+  if (/ovh/i.test(s)) return 'OVH';
+  if (/cogent/i.test(s)) return 'Cogent';
+  if (/he\.net|hurricane/i.test(s)) return 'Hurricane Electric';
+  if (/ntt/i.test(s)) return 'NTT';
+  if (/level\s*3|centurylink|lumen/i.test(s)) return 'Lumen';
+  if (/comcast/i.test(s)) return 'Comcast';
+  if (/att/i.test(s)) return 'AT&T';
+  if (/verizon/i.test(s)) return 'Verizon';
+  if (/deutsche telekom|t-mobile/i.test(s)) return 'Deutsche Telekom';
+  if (/china telecom|chinanet|中国电信/i.test(s)) return '中国电信';
+  if (/china mobile|cmcc|中国移动/i.test(s)) return '中国移动';
+  if (/china unicom|中国联通/i.test(s)) return '中国联通';
+  if (/cnnic/i.test(s)) return 'CNNIC';
+  if (s.length <= 14) return s;
+  const words = s.split(/\s+/);
+  if (words.length > 1) return words[0];
+  return s.slice(0, 13) + '…';
 }
 
 function randomAlphaNum(length) {
