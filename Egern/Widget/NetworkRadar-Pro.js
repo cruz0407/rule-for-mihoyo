@@ -1196,7 +1196,7 @@ export default async function (ctx) {
           color: color,
           ok: preciseResult.ok,
           policy: servicePolicy || "",
-          countryCode: /^[A-Z]{2}$/.test(detail) ? detail : (serviceExit.countryCode || ""),
+          countryCode: (detail !== "OK" && detail !== "APP" && detail !== "Cross" && detail !== "🍿" && /^[A-Z]{2}$/.test(detail)) ? detail : (serviceExit.countryCode || ""),
           country: serviceExit.country || "",
           exit: serviceExit,
           _precise: detail
