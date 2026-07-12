@@ -7,7 +7,7 @@
 1. 将 `Countdown.js` 的 Raw 链接填入 Egern 的 Widget 配置中
 2. 在 Egern 的环境变量（Env）中设置以下变量即可自定义
 
-> Raw 链接：`https://raw.githubusercontent.com/cruz0407/rule-for-mihoyo/main/Egern/Widget/Countdown.js`
+> Raw 链接：[Countdown.js](https://raw.githubusercontent.com/cruz0407/rule-for-mihoyo/main/Egern/Widget/Countdown.js)
 
 ## 环境变量一览
 
