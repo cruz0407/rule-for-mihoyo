@@ -1005,10 +1005,10 @@ export default async function (ctx) {
     const target = clean(ip);
     if (!target || target === "未识别") return "";
     try {
-      const res = await ctx.http.get("https://ipapi.co/" + encodeURIComponent(target) + "/json/", requestOptions());
+      const res = await ctx.http.get("https://ipapi.co/" + encodeURIComponent(target) + "/json/", { timeout: 4000 });
       if (res.status >= 200 && res.status < 400) {
         const d = JSON.parse(await res.text());
-        return d.org || "";
+        return (d.org || "").trim();
       }
     } catch (_) {}
     return "";
@@ -1815,15 +1815,21 @@ export default async function (ctx) {
     if (details.length === 0) {
       return text("延迟检测失败", 5, "medium", C.red, { maxLines: 1 });
     }
+    // vertical mini-pills: label top, ms bottom
     const pills = details.map(function(d) {
       const ms = d.ms || 0;
-      const siteColor = ms <= 180 ? C.green : ms <= 350 ? C.amber : C.red;
-      return row([
-        text(d.label, 5.2, "semibold", C.subtext, { maxLines: 1 }),
-        text(ms + "ms", 5.2, "semibold", siteColor, { maxLines: 1 })
-      ], { gap: 2, padding: [1, 3], backgroundColor: C.tileBg, borderRadius: 4 });
+      const c = ms <= 150 ? C.green : ms <= 300 ? C.amber : C.red;
+      return col([
+        text(d.label, 4.8, "semibold", C.subtext, { maxLines: 1, textAlign: "center" }),
+        text(ms + "ms", 5.5, "bold", c, { maxLines: 1, textAlign: "center" })
+      ], { gap: 0, padding: [1, 2.5], backgroundColor: C.tileBg, borderRadius: 4, alignItems: "center", width: 36 });
     });
-    return row(pills, { gap: 3, flexWrap: "wrap" });
+    // split into sub-rows, max 4 per row
+    var rows = [];
+    for (var i = 0; i < pills.length; i += 4) {
+      rows.push(row(pills.slice(i, i + 4), { gap: 3 }));
+    }
+    return col(rows, { gap: 2 });
   }
 
   function flagBox() {
