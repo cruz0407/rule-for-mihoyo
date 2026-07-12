@@ -981,12 +981,12 @@ export default async function (ctx) {
           city: d.city || "",
           isResidential: d.isResidential,
           fraudScore: Number.isFinite(Number(d.fraudScore)) ? Number(d.fraudScore) : null,
-          org: d.org || d.asn || "",
+          org: d.asOrganization || d.isp || d.org || "",
           asn: d.asn || ""
         };
       }
     } catch (_) {}
-    return { ok: false, ip: "", countryCode: "", country: "", city: "", isResidential: null, fraudScore: null, org: "", asn: "" };
+    return { ok: false, ip: "", countryCode: "", country: "", city: "", isResidential: null, fraudScore: null, org: "", asn: "", asOrganization: "" };
   }
 
   async function getIPApiAbuserScore(ip) {
