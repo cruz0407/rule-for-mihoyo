@@ -351,13 +351,15 @@ export default async function (ctx) {
       return {
         ok: response.status >= 200 && response.status < 500,
         status: response.status,
-        ms: Math.max(1, Date.now() - startedAt)
+        ms: Math.max(1, Date.now() - startedAt),
+        url: url
       };
     } catch (_) {
       return {
         ok: false,
         status: 0,
-        ms: Math.max(1, Date.now() - startedAt)
+        ms: Math.max(1, Date.now() - startedAt),
+        url: url
       };
     }
   }
@@ -868,7 +870,8 @@ export default async function (ctx) {
     return {
       ok: measured.ok,
       ms: measured.ms,
-      target: measured.target
+      target: measured.target,
+      details: measured.details || []
     };
   }
 
@@ -881,7 +884,8 @@ export default async function (ctx) {
     return {
       ok: measured.ok,
       ms: measured.ms,
-      target: measured.target
+      target: measured.target,
+      details: measured.details || []
     };
   }
 
@@ -913,7 +917,8 @@ export default async function (ctx) {
     return {
       ok: true,
       ms: best.ms,
-      target: best.url
+      target: best.url,
+      details: passed.map(function(p) { return { url: p.url, ms: p.ms }; })
     };
   }
 
@@ -1191,7 +1196,7 @@ export default async function (ctx) {
           color: color,
           ok: preciseResult.ok,
           policy: servicePolicy || "",
-          countryCode: detail.length === 2 ? detail : (serviceExit.countryCode || ""),
+          countryCode: /^[A-Z]{2}$/.test(detail) ? detail : (serviceExit.countryCode || ""),
           country: serviceExit.country || "",
           exit: serviceExit,
           _precise: detail
@@ -1968,13 +1973,6 @@ export default async function (ctx) {
         row(
           [
             metricBox(
-              "clock",
-              "延迟",
-              proxyLatency.ok ? proxyLatency.ms + "ms" : "失败",
-              proxyLatencyColor
-            ),
-
-            metricBox(
               "circle.hexagongrid.fill",
               "NAT",
               nat.label,
@@ -2353,6 +2351,32 @@ export default async function (ctx) {
     );
   }
 
+
+  function latencyRow(label, icon, latencyData, tone) {
+    const details = (latencyData && latencyData.details) || [];
+    if (details.length === 0) {
+      return row([
+        image(icon, C.muted, 9, 9),
+        text(label + " 延迟", 6.5, "medium", C.muted, { maxLines: 1 }),
+        spacer(),
+        text("检测失败", 6, "medium", C.red)
+      ], { gap: 4, padding: [1, 0] });
+    }
+    const hostsText = details.map(function(d) {
+      const host = d.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace('www.', '');
+      return host + " " + d.ms + "ms";
+    }).join("  ");
+    return col([
+      row([
+        image(icon, tone, 9, 9),
+        text(label + " 延迟", 6.5, "semibold", tone, { maxLines: 1 }),
+        spacer(),
+        text(latencyData.ok ? latencyData.ms + "ms" : "超时", 6.5, "bold", latencyData.ok ? tone : C.red)
+      ], { gap: 4 }),
+      text(hostsText, 5, "medium", C.subtext, { maxLines: 2, minScale: 0.65 })
+    ], { gap: 2 });
+  }
+
   const dashboard = col(
     [
       header(),
@@ -2369,6 +2393,8 @@ export default async function (ctx) {
         }
       ),
 
+      latencyRow("代理", "paperplane.fill", proxyLatency, proxyLatencyColor),
+      latencyRow("直连", "house.fill", localLatency, localLatencyColor),
       row(
         [
           serviceCard("流媒体解锁", "play.rectangle.fill", media, C.blue),
@@ -2384,7 +2410,7 @@ export default async function (ctx) {
       footer()
     ],
     {
-      height: 342,
+      height: 415,
       padding: [8, 8],
       gap: 6
     }
