@@ -1010,6 +1010,20 @@ export default async function (ctx) {
     return { ok: false, score: 0, level: "" };
   }
 
+  // ── ipapi.co ISP 查询（用于覆盖 exit.isp，比 ippure 的 asOrganization 更准） ──
+  async function getIPApiCoOrg(ip) {
+    const target = clean(ip);
+    if (!target || target === "未识别") return "";
+    try {
+      const res = await ctx.http.get("https://ipapi.co/" + encodeURIComponent(target) + "/json/", requestOptions());
+      if (res.status >= 200 && res.status < 400) {
+        const d = JSON.parse(await res.text());
+        return d.org || "";
+      }
+    } catch (_) {}
+    return "";
+  }
+
   // ── 精确流媒体/AI 检测函数（合并 B/C 文件逻辑） ────────────────────────
   async function checkNetflixPrecise(policy) {
     const titles = ["https://www.netflix.com/title/81280792", "https://www.netflix.com/title/70143836"];
@@ -1304,8 +1318,13 @@ export default async function (ctx) {
     if (ippureData.fraudScore !== null) {
       exit._fraudScore = ippureData.fraudScore;
     }
-    if (ippureData.org && ippureData.org.length >= 3) {
-      exit.isp = ippureData.org;
+  }
+
+  // ── 用 ipapi.co org 覆盖 exit.isp（B 文件验证此源最准） ─────────────────
+  if (exit.ip && exit.ip !== "未识别") {
+    const ipapiCoOrg = await getIPApiCoOrg(exit.ip);
+    if (ipapiCoOrg && ipapiCoOrg.length >= 3) {
+      exit.isp = ipapiCoOrg;
     }
   }
 
