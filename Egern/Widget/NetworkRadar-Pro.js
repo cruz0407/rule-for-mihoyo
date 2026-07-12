@@ -13,7 +13,7 @@
  * - XY 未设置：继续按原逻辑从 Egern 上下文 / 节点元数据 / 节点名尝试识别
  *
  * ✨ Pro 增强项（相比原版）：
- * - 纯净度：ippure.com fraudScore + ipapi.is abuser_score 双源交叉验证（原版为自建粗糙评分）
+ * - 纯净度：ipapi.is abuser_score + proxycheck.io/proxy/vpn/tor + ip-api hosting 多源交叉验证
  * - Netflix：双 title ID（81280792 + 70143836）+ Popcorn 状态识别
  * - Disney+：location 重定向精确检测
  * - TikTok：页面 region 字段解析
@@ -967,28 +967,6 @@ export default async function (ctx) {
     return parseProxyCheck(result.data, target);
   }
 
-  // ── ippure + ipapi.is 双源纯净度检测（替换原来自建评分） ──────────────
-  async function getIPPureInfo() {
-    try {
-      const res = await ctx.http.get("https://my.ippure.com/v1/info", requestOptions());
-      if (res.status >= 200 && res.status < 400) {
-        const d = JSON.parse(await res.text());
-        return {
-          ok: true,
-          ip: d.ip || "",
-          countryCode: d.countryCode || "",
-          country: d.country || "",
-          city: d.city || "",
-          isResidential: d.isResidential,
-          fraudScore: Number.isFinite(Number(d.fraudScore)) ? Number(d.fraudScore) : null,
-          org: d.asOrganization || d.isp || d.org || "",
-          asn: d.asn || ""
-        };
-      }
-    } catch (_) {}
-    return { ok: false, ip: "", countryCode: "", country: "", city: "", isResidential: null, fraudScore: null, org: "", asn: "", asOrganization: "" };
-  }
-
   async function getIPApiAbuserScore(ip) {
     try {
       const res = await ctx.http.get("https://api.ipapi.is/?q=" + encodeURIComponent(ip), requestOptions());
@@ -1010,7 +988,7 @@ export default async function (ctx) {
     return { ok: false, score: 0, level: "" };
   }
 
-  // ── ipapi.co ISP 查询（用于覆盖 exit.isp，比 ippure 的 asOrganization 更准） ──
+  // ── ipapi.co ISP 查询（B 文件验证此源最准） ──────────────────────────
   async function getIPApiCoOrg(ip) {
     const target = clean(ip);
     if (!target || target === "未识别") return "";
@@ -1271,7 +1249,6 @@ export default async function (ctx) {
     proxyLatency,
     localLatency,
     quic,
-    ippureData,
     ipapiAbuserData,
     media,
     ai
@@ -1282,7 +1259,6 @@ export default async function (ctx) {
     getProxyLatency(),
     getLocalLatency(),
     getQuic(),
-    getIPPureInfo(),
     getIPApiAbuserScore(""),
 
     Promise.all([
@@ -1303,22 +1279,6 @@ export default async function (ctx) {
       testService("perplexity", "Perplexity", "perplexity", C.perplexity, "https://www.perplexity.ai/", aiPolicyMap.perplexity)
     ])
   ]);
-
-  // ── 用 ippure 数据补全 exit 信息 ──────────────────────────────────────────
-  if (ippureData && ippureData.ok && ippureData.ip) {
-    if (!exit.ip || exit.ip === "未识别") {
-      exit.ip = ippureData.ip;
-    }
-    if (!exit.countryCode && ippureData.countryCode) {
-      exit.countryCode = ippureData.countryCode;
-    }
-    if (ippureData.isResidential !== null && ippureData.isResidential !== undefined) {
-      exit._isResidential = ippureData.isResidential;
-    }
-    if (ippureData.fraudScore !== null) {
-      exit._fraudScore = ippureData.fraudScore;
-    }
-  }
 
   // ── 用 ipapi.co org 覆盖 exit.isp（B 文件验证此源最准） ─────────────────
   if (exit.ip && exit.ip !== "未识别") {
@@ -1354,8 +1314,8 @@ export default async function (ctx) {
   const dnsLabel = dnsTinyLabel(dns.short || dns.full);
   const localArea = localExit.label || "中国大陆";
   const nat = detectNAT(localIP, exit.ip);
-  const purity = purityScore(exit, ippureData, ipapiAbuserData);
-  const risk = riskLevel(exit, purity, ippureData, ipapiAbuserData);
+  const purity = purityScore(exit, ipapiAbuserData);
+  const risk = riskLevel(exit, purity, ipapiAbuserData);
 
   const proxyLatencyColor = proxyLatency.ok
     ? proxyLatency.ms <= 220 ? C.green : C.amber
@@ -4439,36 +4399,30 @@ function dnsTinyLabel(value) {
   return "未知";
 }
 
-function purityScore(exit, ippureData, ipapiAbuserData) {
+function purityScore(exit, ipapiAbuserData) {
   const flags = (exit && exit.flags) || {};
   const evidence = flags.evidence || {};
   const kind = clean(exit && exit.kind);
-  const ippOk = ippureData && ippureData.ok;
-  const isResidential = ippOk ? ippureData.isResidential : null;
-  const fraudScore = ippOk ? ippureData.fraudScore : null;
   const abuserOk = ipapiAbuserData && ipapiAbuserData.ok;
   const abuserLevel = abuserOk ? ipapiAbuserData.level : '';
+  const abuserScore = abuserOk ? ipapiAbuserData.score : 0;
+
   let score = 72;
-  if (isResidential === true) score = 94;
-  else if (isResidential === false) score = 65;
-  else if (kind === '住宅 IP') score = 88;
-  else if (kind === '移动网络') score = 86;
+  if (flags.residential || kind === '住宅 IP') score = 92;
+  else if (kind === '移动网络') score = 88;
   else if (kind === '教育网络' || kind === '企业网络') score = 84;
-  else if (kind === '商业机房') score = 72;
-  if (fraudScore !== null && Number.isFinite(fraudScore)) {
-    if (fraudScore >= 85) score -= 35;
-    else if (fraudScore >= 70) score -= 22;
-    else if (fraudScore >= 50) score -= 12;
-    else if (fraudScore >= 30) score -= 5;
-    else if (fraudScore >= 10) score -= 2;
-  }
+  else if (kind === '商业机房') score = 68;
+
+  // ipapi.is abuser_score 扣分
   if (abuserOk && abuserLevel) {
     const lv = abuserLevel.toLowerCase();
-    if (lv.includes('very high') || lv.includes('extremely high')) score -= 28;
-    else if (lv.includes('high')) score -= 18;
-    else if (lv.includes('elevated') || lv.includes('moderate')) score -= 8;
-    else if (lv.includes('low')) score -= 2;
+    if (lv.includes('very high') || lv.includes('extremely high')) score -= 32;
+    else if (lv.includes('high')) score -= 20;
+    else if (lv.includes('elevated') || lv.includes('moderate')) score -= 10;
+    else if (lv.includes('low')) score -= 3;
   }
+
+  // flags 补充扣分
   const proxyCount = Number(evidence.proxyCount || 0);
   const vpnCount = Number(evidence.vpnCount || 0);
   const torCount = Number(evidence.torCount || 0);
@@ -4476,24 +4430,26 @@ function purityScore(exit, ippureData, ipapiAbuserData) {
   const proxyVpnEvidenceCount = proxyCount + vpnCount;
   if (torCount > 0 || flags.tor) score -= 50;
   if (abuserCount > 0 || flags.abuser) score -= 30;
-  if (proxyVpnEvidenceCount >= 2) score -= 18;
-  else if (proxyVpnEvidenceCount === 1) score -= 10;
-  if (isResidential === true && fraudScore !== null && fraudScore < 20 && !flags.tor && !flags.abuser) score += 5;
+  if (proxyVpnEvidenceCount >= 2) score -= 20;
+  else if (proxyVpnEvidenceCount === 1) score -= 12;
+
+  // 机房额外扣分
+  if (flags.datacenter || flags.hosting || flags.cloud) score -= 5;
+  if (flags.residential && !flags.proxy && !flags.vpn && !flags.tor && score < 90) score += 3;
+
   score = Math.max(0, Math.min(100, Math.round(score)));
-  return { score: score, risk: 100 - score, evidence: evidence, _ippure: { ok: ippOk, isResidential: isResidential, fraudScore: fraudScore }, _ipapiAbuser: { ok: abuserOk, score: abuserOk ? ipapiAbuserData.score : 0, level: abuserLevel } };
+  return { score: score, risk: 100 - score, evidence: evidence, _ipapiAbuser: { ok: abuserOk, score: abuserScore, level: abuserLevel } };
 }
 
-function riskLevel(exit, purity, ippureData, ipapiAbuserData) {
+function riskLevel(exit, purity, ipapiAbuserData) {
   const flags = (exit && exit.flags) || {};
   const evidence = flags.evidence || {};
   const score = Number(purity && purity.score);
-  const ippOk = ippureData && ippureData.ok;
-  const fraudScore = ippOk ? ippureData.fraudScore : null;
   const abuserOk = ipapiAbuserData && ipapiAbuserData.ok;
   const abuserLevel = abuserOk ? ipapiAbuserData.level : '';
   const proxyVpnEvidenceCount = Number(evidence.proxyCount || 0) + Number(evidence.vpnCount || 0);
-  if (flags.tor || Number(evidence.torCount || 0) > 0 || flags.abuser || Number(evidence.abuserCount || 0) > 0 || (fraudScore !== null && fraudScore >= 80) || (abuserLevel && (abuserLevel.includes('Very High') || abuserLevel.includes('High'))) || score < 40) return '高风险';
-  if (score < 70 || flags.datacenter || flags.hosting || flags.cloud || (fraudScore !== null && fraudScore >= 40) || (abuserLevel && abuserLevel.includes('Elevated')) || proxyVpnEvidenceCount > 0) return '中风险';
+  if (flags.tor || Number(evidence.torCount || 0) > 0 || flags.abuser || Number(evidence.abuserCount || 0) > 0 || (abuserLevel && (abuserLevel.includes('Very High') || abuserLevel.includes('High'))) || score < 40) return '高风险';
+  if (score < 70 || flags.datacenter || flags.hosting || flags.cloud || (abuserLevel && abuserLevel.includes('Elevated')) || proxyVpnEvidenceCount > 0) return '中风险';
   return '低风险';
 }
 
