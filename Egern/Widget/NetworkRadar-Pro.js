@@ -27,6 +27,9 @@
  * POLICY ＞ LMT / AI ＞ 单服务内置候选策略名匹配 ＞ 不指定 policy
  */
 
+// ── 模块级测速缓存（Egern JS 上下文在 Widget 刷新间保持） ──────────
+let latencyCache = null;
+
 export default async function (ctx) {
   const env = ctx.env || {};
   const C = palette();
@@ -874,85 +877,79 @@ export default async function (ctx) {
     };
   }
 
+  // ── 测速重写：预热+串行+5采样+trimmed mean+抖动+缓存 ────────────
   async function getProxyLatency() {
-    const measured = await measureLatencySet(
-      GLOBAL_PROXY_LATENCY_URLS,
-      false
-    );
-
-    return {
-      ok: measured.ok,
-      ms: measured.ms,
-      target: measured.target,
-      details: measured.details || []
-    };
+    return await cachedLatencySet(GLOBAL_PROXY_LATENCY_URLS, false, 'proxy');
   }
 
   async function getLocalLatency() {
-    const measured = await measureLatencySet(
-      MAINLAND_LATENCY_URLS,
-      true
-    );
+    return await cachedLatencySet(MAINLAND_LATENCY_URLS, true, 'local');
+  }
 
-    return {
-      ok: measured.ok,
-      ms: measured.ms,
-      target: measured.target,
-      details: measured.details || []
-    };
+  async function cachedLatencySet(urls, direct, cacheKey) {
+    var CACHE_MS = 5 * 60 * 1000;
+    var now = Date.now();
+    if (latencyCache && latencyCache[cacheKey] && (now - latencyCache[cacheKey].ts) < CACHE_MS) {
+      return latencyCache[cacheKey].data;
+    }
+    var result = await measureLatencySet(urls, direct);
+    if (!latencyCache) latencyCache = {};
+    latencyCache[cacheKey] = { ts: now, data: result };
+    return result;
   }
 
   async function measureLatencySet(urls, direct) {
-    const results = await Promise.all(
-      urls.map(function (url) {
-        return latencyProbe(url, direct);
-      })
-    );
-
-    const passed = results
-      .filter(function (item) {
-        return item.ok && item.ms > 0;
-      })
-      .sort(function (a, b) {
-        return a.ms - b.ms;
-      });
-
-    if (passed.length === 0) {
-      return {
-        ok: false,
-        ms: 0,
-        target: ""
-      };
+    var allDetails = [];
+    // 串行探测，避免并发 TCP 限制
+    for (var i = 0; i < urls.length; i++) {
+      var probe = await latencyProbe(urls[i], direct);
+      if (probe.ok && probe.ms > 0) {
+        allDetails.push({ url: urls[i], ms: probe.ms, jitter: probe.jitter, label: latencyLabel(urls[i]) });
+      }
     }
-
-    const best = passed[0];
-
+    if (allDetails.length === 0) {
+      return { ok: false, ms: 0, target: '', details: [] };
+    }
+    allDetails.sort(function(a,b) { return a.ms - b.ms; });
     return {
       ok: true,
-      ms: best.ms,
-      target: best.url,
-      details: passed.map(function(p) { return { url: p.url, ms: p.ms, label: latencyLabel(p.url) }; })
+      ms: allDetails[0].ms,
+      target: allDetails[0].url,
+      details: allDetails
     };
   }
 
   async function latencyProbe(url, direct) {
-    var bestMs = 9999, bestOk = false, bestStatus = 0;
-    for (var r = 0; r < 3; r++) {
-      const startedAt = Date.now();
+    var opts = direct
+      ? directRequestOptions({ timeout: LATENCY_TIMEOUT })
+      : requestOptions({ timeout: LATENCY_TIMEOUT });
+    var samples = [];
+    var WARMUP = 2, TOTAL = 7;  // 2 次预热 + 5 次正式采样
+    for (var r = 0; r < TOTAL; r++) {
+      var t0 = Date.now();
       try {
-        const response = direct
-          ? await ctx.http.get(url, directRequestOptions({ timeout: LATENCY_TIMEOUT }))
-          : await ctx.http.get(url, requestOptions({ timeout: LATENCY_TIMEOUT }));
-        const ms = Math.max(1, Date.now() - startedAt);
-        const ok = response.status >= 200 && response.status < 400;
-        if (ok && ms < bestMs) { bestMs = ms; bestOk = true; bestStatus = response.status; }
-        else if (!bestOk && ms < bestMs) { bestMs = ms; bestStatus = response.status; }
+        var resp = await ctx.http.get(url, opts);
+        var ms = Math.max(1, Date.now() - t0);
+        var ok = resp.status >= 200 && resp.status < 400;
+        if (r >= WARMUP && ok) { samples.push(ms); }
       } catch (_) {
-        const ms = Math.max(1, Date.now() - startedAt);
-        if (ms < bestMs) { bestMs = ms; }
+        // 预热阶段的失败忽略；正式阶段的失败跳过该次采样
       }
     }
-    return { ok: bestOk, status: bestStatus, ms: bestMs, url: url };
+    if (samples.length < 2) {
+      return { ok: false, ms: 9999, jitter: 0, url: url };
+    }
+    // trimmed mean：去掉最高和最低，取平均
+    samples.sort(function(a,b) { return a - b; });
+    var trim = samples.slice(1, -1);
+    var sum = 0;
+    for (var j = 0; j < trim.length; j++) { sum += trim[j]; }
+    var avg = Math.round(sum / trim.length);
+    // 抖动：标准差
+    var variance = 0;
+    for (var k = 0; k < trim.length; k++) { variance += Math.pow(trim[k] - avg, 2); }
+    var jitter = Math.round(Math.sqrt(variance / trim.length));
+    return { ok: true, ms: avg, jitter: jitter, url: url };
   }
 
   async function getProxyCheck(ip) {
