@@ -1765,7 +1765,7 @@ export default async function (ctx) {
               }
             )
           ],
-          { gap: 6 }
+          { gap: 8 }
         ),
 
         row(
@@ -1978,7 +1978,7 @@ export default async function (ctx) {
             )
           ],
           {
-            gap: 4,
+            gap: 8,
             alignItems: "center"
           }
         ),
