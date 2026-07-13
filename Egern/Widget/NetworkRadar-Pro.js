@@ -130,7 +130,6 @@ export default async function (ctx) {
     : [];
 
   let networkName = getLocalNetworkName(device);
-  const radioMap = { "GPRS": "2.5G", "EDGE": "2.75G", "WCDMA": "3G", "LTE": "4G", "NR": "5G", "NRNSA": "5G" };
 
   const localIP =
     clean(
@@ -1121,25 +1120,6 @@ export default async function (ctx) {
     } catch (_) { return { ok: false, detail: "Cross" }; }
   }
 
-  async function speedTest() {
-    const dl = async () => {
-      try { const s = Date.now(); const r = await ctx.http.get("https://speed.cloudflare.com/__down?bytes=102400", { timeout: 4000 }); await r.text(); const ms = Date.now() - s; return ms > 0 ? Math.round(102400 / ms * 1000 / 1024) : 0; } catch (_) { return 0; }
-    };
-    const ul = async () => {
-      try { const s = Date.now(); const r = await ctx.http.post("https://speed.cloudflare.com/__up", { body: "x".repeat(102400), timeout: 4000 }); await r.text(); const ms = Date.now() - s; return ms > 0 ? Math.round(102400 / ms * 1000 / 1024) : 0; } catch (_) { return 0; }
-    };
-    const [dlKB, ulKB] = await Promise.all([dl(), ul()]);
-    return { dl: dlKB || 0, ul: ulKB || 0 };
-  }
-
-  async function getIPv6() {
-    try {
-      const r = await ctx.http.get("https://api64.ipify.org?format=json", { timeout: 3000 });
-      const d = JSON.parse(await r.text());
-      return (d && d.ip && d.ip.includes(":")) ? d.ip : "";
-    } catch (_) { return ""; }
-  }
-
   async function getQuic() {
     const urls = QUIC_TRACE_URLS.map(function (url) {
       return url + "?_=" + Date.now() + randomAlphaNum(5);
@@ -1277,9 +1257,6 @@ export default async function (ctx) {
     localLatency,
     quic,
     ipapiAbuserData,
-    speedDown,
-    speedUp,
-    publicIPv6,
     media,
     ai
   ] = await Promise.all([
@@ -1290,11 +1267,6 @@ export default async function (ctx) {
     getLocalLatency(),
     getQuic(),
     getIPApiAbuserScore(""),
-    speedTest(),
-    getIPv6(),
-    getSpeedDownload(),
-    getSpeedUpload(),
-    getPublicIPv6(),
 
     Promise.all([
       testService("netflix", "Netflix", "netflix", C.netflix, "", mediaPolicyMap.netflix),
@@ -1360,21 +1332,6 @@ export default async function (ctx) {
   const purity = purityScore(exit, ipapiAbuserData);
   const risk = riskLevel(exit, purity, ipapiAbuserData);
 
-  // DNS 泄漏检测
-  const localCC = (localExit && localExit.countryCode) || "";
-  const exitCC = (exit && exit.countryCode) || "";
-  const isDnsLeak = !!POLICY && localCC === "CN" && exitCC === "CN";
-
-  // 测速格式化
-  const fmtSpd = (kb) => kb > 0 ? (kb >= 1024 ? (kb/1024).toFixed(1)+"MB/s" : kb+"KB/s") : "--";
-  const dlSpeed = (speedData && speedData.dl) || 0;
-  const ulSpeed = (speedData && speedData.ul) || 0;
-  const speedStr = "↓" + fmtSpd(dlSpeed) + " ↑" + fmtSpd(ulSpeed);
-  const avgMB = (dlSpeed + ulSpeed) / 2 / 1024;
-  const speedColor = (dlSpeed === 0 && ulSpeed === 0) ? C.muted : (avgMB >= 10 ? C.green : avgMB >= 2 ? C.amber : C.red);
-
-  // IPv6
-  const publicIPv6 = ipv6Data || "";
 
   const proxyLatencyColor = proxyLatency.ok
     ? proxyLatency.ms <= 220 ? C.green : C.amber
@@ -1826,7 +1783,7 @@ export default async function (ctx) {
             metricBox(
               "network",
               "IPV4/IPV6",
-              (hasIPv4 ? "✓" : "×") + "/" + (hasIPv6 ? "✓" : "×") + (publicIPv6 ? "+" : ""),
+              (hasIPv4 ? "✓" : "×") + "/" + (hasIPv6 ? "✓" : "×"),
               hasIPv4 && hasIPv6
                 ? C.green
                 : hasIPv4
@@ -2350,24 +2307,6 @@ export default async function (ctx) {
     );
   }
 
-  function speedRow() {
-    const down = Number(speedDown) || 0, up = Number(speedUp) || 0;
-    if (down === 0 && up === 0) return row([
-      image("arrow.up.and.down.circle.fill", C.muted, 9, 9),
-      text("测速失败", 6, "medium", C.muted)
-    ], { gap: 4, padding: [2, 0] });
-    const fmt = function(kb) { return kb >= 1024 ? (kb / 1024).toFixed(1) + "MB/s" : kb + "KB/s"; };
-    const downStr = "↓ " + fmt(down), upStr = "↑ " + fmt(up);
-    const avgMB = (down + up) / 2 / 1024;
-    const spdColor = avgMB >= 10 ? C.green : avgMB >= 2 ? C.amber : C.red;
-    return row([
-      image("arrow.up.and.down.circle.fill", spdColor, 9, 9),
-      text("测速", 6.5, "semibold", spdColor, { maxLines: 1 }),
-      text(downStr + "  " + upStr, 6, "medium", C.subtext, { maxLines: 1, flex: 1 }),
-      ...(publicIPv6 ? [text("v6: " + publicIPv6.substring(0, 15) + "…", 5, "medium", C.muted, { maxLines: 1 })] : [])
-    ], { gap: 4, padding: [1, 0] });
-  }
-
   function footer() {
     return card(
       [
@@ -2387,13 +2326,6 @@ export default async function (ctx) {
               exit.kind === "商业机房"
                 ? C.amber
                 : C.green
-            ),
-
-            footerCell(
-              "arrow.up.and.down.circle.fill",
-              "网速",
-              speedStr,
-              speedColor
             ),
 
             footerCell(
@@ -2463,7 +2395,6 @@ export default async function (ctx) {
         }
       ),
 
-      speedRow(),
       footer()
     ],
     {
