@@ -44,6 +44,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
+  const VERSION = "1.0.0";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -1604,7 +1605,7 @@ export default async function (ctx) {
                       minScale: 0.72
                     }),
 
-                    pill("Pro", C.purple, C.purpleSoft, {
+                    pill("v" + VERSION, C.purple, C.purpleSoft, {
                       padding: [1, 4]
                     })
                   ],
