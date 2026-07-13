@@ -1441,7 +1441,7 @@ export default async function (ctx) {
         direction: "column",
         alignItems: "start",
         padding: [6, 7],
-        gap: 4,
+        gap: 3,
         backgroundColor: C.card,
         backgroundGradient: {
           type: "linear",
@@ -1723,7 +1723,7 @@ export default async function (ctx) {
 
         row(
           [
-            iconBox("wifi", C.blue, C.blueSoft, 42),
+            iconBox("wifi", C.blue, C.blueSoft, 36),
 
             col(
               [
@@ -1810,7 +1810,7 @@ export default async function (ctx) {
       ],
       {
         flex: 1,
-        height: 108
+        height: 112
       }
     );
   }
@@ -2021,7 +2021,7 @@ export default async function (ctx) {
       ],
       {
         flex: 1,
-        height: 108,
+        height: 112,
         padding: [5, 6],
         gap: 3
       }
@@ -2378,7 +2378,7 @@ export default async function (ctx) {
           proxyCard()
         ],
         {
-          height: 108,
+          height: 112,
           gap: 6,
           alignItems: "start"
         }
