@@ -27,6 +27,11 @@
  * POLICY ＞ LMT / AI ＞ 单服务内置候选策略名匹配 ＞ 不指定 policy
  */
 
+
+// ── NQR ISP 品质数据库 ─────────────────────────────────────────────
+const ispDB={'HKT':30,'HKBN':30,'PCCW':30,'Netvigator':30,'CMHK':28,'中国移动':28,'NTT':30,'KDDI':30,'SoftBank':30,'Softbank':30,'So-net':28,'SK Broadband':30,'SK Telecom':30,'KT':30,'LG U+':30,'LG Uplus':30,'CHT':28,'Chunghwa':28,'Taiwan Mobile':28,'FarEasTone':28,'SingTel':28,'StarHub':28,'M1':28,'MyRepublic':26,'Telstra':28,'Optus':28,'TPG':28,'Vocus':28,'Deutsche Telekom':28,'Vodafone':28,'BT':28,'Orange':28,'Free':26,'AT&T':28,'Verizon':28,'Comcast':28,'Cox':26,'Spectrum':26,'Cogent':24,'Lumen':24,'GTT':22,'Telia':22,'NTT America':24,'Hurricane Electric':22,'HE':22,'M247':20,'Oracle':12,'Oracle Cloud':12,'OCI':12,'AWS':10,'Amazon':10,'Google Cloud':12,'Google':12,'Microsoft':10,'Azure':10,'Alibaba':10,'阿里云':10,'Tencent':10,'腾讯云':10,'DigitalOcean':14,'Linode':14,'Vultr':14,'Hetzner':14,'OVH':14,'Leaseweb':16,'Eons':18,'GoMami':18,'GoMami Networks':18,'IT7':18,'IT7 Network':18,'DMIT':18,'DMIT Network':18,'Akamai':16,'Cloudflare':14,'Fastly':16,'_default_':18};
+function ispQualityScore(n){var s=String(n||'').trim();if(ispDB[s])return ispDB[s];var l=s.toLowerCase();for(var k in ispDB){if(k==='_default_')continue;if(l.indexOf(k.toLowerCase())>=0)return ispDB[k];}return ispDB['_default_'];}
+
 // ── 模块级测速缓存（Egern JS 上下文在 Widget 刷新间保持） ──────────
 let latencyCache = null;
 
@@ -47,7 +52,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.1.0";
+  const VERSION = "1.2.0";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -973,28 +978,9 @@ export default async function (ctx) {
     return parseProxyCheck(result.data, target);
   }
 
-  async function getIPApiAbuserScore(ip) {
-    try {
-      const res = await ctx.http.get("https://api.ipapi.is/?q=" + encodeURIComponent(ip), requestOptions());
-      if (res.status >= 200 && res.status < 400) {
-        const j = JSON.parse(await res.text());
-        if (j && j.company && j.company.abuser_score) {
-          const raw = String(j.company.abuser_score);
-          const m = raw.match(/([0-9.]+)\s*\(([^)]+)\)/);
-          if (m) {
-            return {
-              ok: true,
-              score: parseFloat(m[1]) || 0,
-              level: m[2].trim()
-            };
-          }
-        }
-      }
-    } catch (_) {}
-    return { ok: false, score: 0, level: "" };
-  }
+  async function getIPApiFull(ip) { try { const res = await ctx.http.get("https://api.ipapi.is/?q=" + encodeURIComponent(ip), requestOptions()); if (res.status >= 200 && res.status < 400) { const j = JSON.parse(await res.text()); const co = j.company || {}, sc = j.security || {}, cn = j.connection || {}; const m = String(co.abuser_score||"").match(/([0-9.]+)s*(([^)]+))/); return { ok:true, abuserScore:m?parseFloat(m[1])||0:0, abuserLevel:m?m[2].trim():"", isDatacenter:!!(sc.is_datacenter||co.is_datacenter), isProxy:!!(sc.is_proxy||sc.proxy), isVpn:!!(sc.is_vpn), isTor:!!(sc.is_tor), isMobile:!!(cn.mobile), isAbuser:!!(sc.is_abuser), companyType:co.type||"", asnName:(j.asn&&j.asn.name)||"" }; } } catch(_){} return { ok:false, abuserScore:0, abuserLevel:"", isDatacenter:false, isProxy:false, isVpn:false, isTor:false, isMobile:false, isAbuser:false, companyType:"", asnName:"" }; }
 
-  // ── ipapi.co ISP 查询（B 文件验证此源最准） ──────────────────────────
+  // ── ipapi.co ISP  // ── ipapi.co ISP 查询（B 文件验证此源最准） ──────────────────────────
   async function getIPApiCoOrg(ip) {
     const target = clean(ip);
     if (!target || target === "未识别") return "";
@@ -1255,7 +1241,7 @@ export default async function (ctx) {
     proxyLatency,
     localLatency,
     quic,
-    ipapiAbuserData,
+    apiFullData,
     media,
     ai
   ] = await Promise.all([
@@ -1265,7 +1251,7 @@ export default async function (ctx) {
     getProxyLatency(),
     getLocalLatency(),
     getQuic(),
-    getIPApiAbuserScore(""),
+    getIPApiFull(""),
 
     Promise.all([
       testService("netflix", "Netflix", "netflix", C.netflix, "", mediaPolicyMap.netflix),
@@ -1294,9 +1280,9 @@ export default async function (ctx) {
     }
   }
 
-  // ── 修正 ipapiAbuserData 的 IP ────────────────────────────────────────────
-  if (exit.ip && exit.ip !== "未识别" && !ipapiAbuserData.ok) {
-    ipapiAbuserData = await getIPApiAbuserScore(exit.ip);
+  // ── 修正 apiFullData 的 IP ────────────────────────────────────────────
+  if (exit.ip && exit.ip !== "未识别" && !apiFullData.ok) {
+    apiFullData = await getIPApiFull(exit.ip);
   }
 
   const carrierByDirectISP = carrierFromISP(
@@ -1327,9 +1313,14 @@ export default async function (ctx) {
   const dns = chooseDNSProvider(baseDNS, verifiedDNS);
   const dnsLabel = dnsTinyLabel(dns.short || dns.full);
   const localArea = localExit.label || "中国大陆";
+  function nodeQualityRating(exit, af, pLat, qc, v6, dnsOk, natOk, mediaOk, aiOk) { var f=af||{}, ok=f.ok||false; var ispS=ispQualityScore(exit.isp), ispM=30; var ipS=12; if(f.isTor)ipS=0;else if(f.isVpn)ipS=6;else if(f.isProxy)ipS=10; else if(f.isDatacenter)ipS=10;else if(f.isMobile||exit.kind==="移动网络")ipS=23; else if(exit.kind==="住宅 IP"||(exit.flags||{}).residential)ipS=25; else if(exit.kind==="商业机房")ipS=10; var rsS=16,ipM=25; if(ok&&f.abuserScore>0){if(f.abuserScore>=60)rsS=5;else if(f.abuserScore>=40)rsS=10;else if(f.abuserScore>=20)rsS=14;else if(f.abuserScore>=5)rsS=16;else rsS=18;} if(ok&&f.isAbuser)rsS=Math.max(0,rsS-8); var ntS=0,rsM=20; if(pLat&&pLat.ok){if(pLat.ms<=50)ntS+=8;else if(pLat.ms<=100)ntS+=7;else if(pLat.ms<=200)ntS+=5;else ntS+=3;} if(qc&&qc.value&&qc.value!=="❌")ntS+=2;if(v6)ntS+=2;if(dnsOk)ntS+=1;if(natOk)ntS+=1;if(qc&&qc.tone==="green")ntS+=1; var svS=Math.min(10,Math.round((mediaOk+aiOk)/12*10)),ntM=15,svM=10; var tot=Math.round(ispS+ipS+rsS+Math.min(ntS,ntM)+Math.min(svS,svM)); tot=Math.max(10,Math.min(100,tot)); return{total:tot,grade:tot>=90?"A+":tot>=80?"A":tot>=70?"B":tot>=55?"C":"D", isp:{score:ispS,max:ispM,name:shortISP(exit.isp)},ip:{score:ipS,max:ipM}, risk:{score:rsS,max:rsM},network:{score:Math.min(ntS,ntM),max:ntM}, service:{score:Math.min(svS,svM),max:svM}}; }
+
   const nat = detectNAT(localIP, exit.ip);
-  const purity = purityScore(exit, ipapiAbuserData);
-  const risk = riskLevel(exit, purity, ipapiAbuserData);
+  const mediaPassed = media.filter(function(m){return m.ok;}).length;
+  const aiPassed = ai.filter(function(a){return a.ok;}).length;
+  const purity = purityScore(exit, apiFullData);
+  const risk = riskLevel(exit, purity, apiFullData);
+  const nqr = nodeQualityRating(exit, apiFullData, proxyLatency, quic, hasIPv6, dnsLabel!=="未知", nat.label==="Open", mediaPassed, aiPassed);
 
 
   const proxyLatencyColor = proxyLatency.ok
@@ -2318,33 +2309,31 @@ export default async function (ctx) {
             ),
 
             footerCell(
-              "house.fill",
-              "属性类型",
-              exit._isResidential === true ? "原生住宅" : exit._isResidential === false ? "商业机房" : (exit.kind || "未知"),
-              exit.kind === "商业机房"
-                ? C.amber
-                : C.green
+              "star.fill",
+              "节点质量",
+              nqr.grade + " · " + nqr.total + "分",
+              nqr.total >= 80 ? C.green : nqr.total >= 55 ? C.amber : C.red
             ),
 
             footerCell(
               "checkmark.shield.fill",
-              "纯净评分",
-              purity.score + "分",
-              purityColor
+              "ISP品质",
+              nqr.isp.name,
+              nqr.isp.score >= 24 ? C.green : nqr.isp.score >= 14 ? C.amber : C.red
             ),
 
             footerCell(
               "shield.lefthalf.filled",
-              "风险等级",
-              risk,
-              riskColor
+              "服务能力",
+              nqr.service.score + "/" + nqr.service.max,
+              nqr.service.score >= 8 ? C.green : nqr.service.score >= 5 ? C.amber : C.red
             ),
 
             footerCell(
               "arrow.clockwise",
-              "更新时间",
-              timeLabel(now),
-              C.purple
+              "风险",
+              risk,
+              risk === "低风险" ? C.green : risk === "中风险" ? C.amber : C.red
             )
           ],
           {
@@ -4402,13 +4391,13 @@ function dnsTinyLabel(value) {
   return "未知";
 }
 
-function purityScore(exit, ipapiAbuserData) {
+function purityScore(exit, apiFullData) {
   const flags = (exit && exit.flags) || {};
   const evidence = flags.evidence || {};
   const kind = clean(exit && exit.kind);
-  const abuserOk = ipapiAbuserData && ipapiAbuserData.ok;
-  const abuserLevel = abuserOk ? ipapiAbuserData.level : '';
-  const abuserScore = abuserOk ? ipapiAbuserData.score : 0;
+  const abuserOk = apiFullData && apiFullData.ok;
+  const abuserLevel = abuserOk ? apiFullData.level : '';
+  const abuserScore = abuserOk ? apiFullData.score : 0;
 
   let score = 60;
   if (flags.residential || kind === '住宅 IP') score = 92;
@@ -4439,12 +4428,12 @@ function purityScore(exit, ipapiAbuserData) {
   return { score: score, risk: 100 - score, evidence: evidence, _ipapiAbuser: { ok: abuserOk, score: abuserScore, level: abuserLevel } };
 }
 
-function riskLevel(exit, purity, ipapiAbuserData) {
+function riskLevel(exit, purity, apiFullData) {
   const flags = (exit && exit.flags) || {};
   const evidence = flags.evidence || {};
   const score = Number(purity && purity.score);
-  const abuserOk = ipapiAbuserData && ipapiAbuserData.ok;
-  const abuserLevel = abuserOk ? ipapiAbuserData.level : '';
+  const abuserOk = apiFullData && apiFullData.ok;
+  const abuserLevel = abuserOk ? apiFullData.level : '';
   const proxyVpnEvidenceCount = Number(evidence.proxyCount || 0) + Number(evidence.vpnCount || 0);
   if (flags.tor || Number(evidence.torCount || 0) > 0 || flags.abuser || Number(evidence.abuserCount || 0) > 0 || (abuserLevel && (abuserLevel.includes('Very High') || abuserLevel.includes('High'))) || score < 40) return '高风险';
   if (score < 70 || flags.datacenter || flags.hosting || flags.cloud || (abuserLevel && abuserLevel.includes('Elevated')) || proxyVpnEvidenceCount > 0) return '中风险';
