@@ -47,7 +47,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
