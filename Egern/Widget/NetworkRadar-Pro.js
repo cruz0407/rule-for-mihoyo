@@ -44,7 +44,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.0.0";
+  const VERSION = "1.0.1";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -78,9 +78,9 @@ export default async function (ctx) {
 
   const MAINLAND_LATENCY_URLS = [
     "http://connect.rom.miui.com/generate_204",
-    "https://www.baidu.com/favicon.ico",
-    "https://www.qq.com/favicon.ico",
-    "https://www.aliyun.com/favicon.ico"
+    "http://wifi.vivo.com.cn/generate_204",
+    "http://204.ustc.edu.cn/generate_204",
+    "https://www.baidu.com/favicon.ico"
   ];
 
   const GLOBAL_PROXY_LATENCY_URLS = [
@@ -289,8 +289,8 @@ export default async function (ctx) {
   function latencyLabel(url) {
     const h = url.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace("www.", "");
     const map = {
-      "connect.rom.miui.com": "miui",
-      "www.baidu.com": "baidu", "www.qq.com": "qq", "www.aliyun.com": "aliyun",
+      "connect.rom.miui.com": "miui", "wifi.vivo.com.cn": "vivo",
+      "204.ustc.edu.cn": "ustc", "www.baidu.com": "baidu",
       "cp.cloudflare.com": "CF", "www.gstatic.com": "gstatic",
       "www.google.com": "google", "www.cloudflare.com": "CFcdn"
     };
@@ -1605,9 +1605,8 @@ export default async function (ctx) {
                       minScale: 0.72
                     }),
 
-                    pill("v" + VERSION, C.purple, C.purpleSoft, {
-                      padding: [1, 4]
-                    })
+                    pill("Pro", C.purple, C.purpleSoft, { padding: [1, 4] }),
+                    pill("v" + VERSION, C.blue, C.blueSoft, { padding: [1, 4] })
                   ],
                   {
                     gap: 3,
@@ -2023,7 +2022,7 @@ export default async function (ctx) {
       {
         flex: 1,
         height: 112,
-        padding: [5, 6],
+        padding: [6, 7],
         gap: 3
       }
     );
@@ -2400,7 +2399,6 @@ export default async function (ctx) {
       footer()
     ],
     {
-      height: 355,
       padding: [8, 8],
       gap: 6
     }
@@ -4415,13 +4413,11 @@ function purityScore(exit, ipapiAbuserData) {
   const abuserLevel = abuserOk ? ipapiAbuserData.level : '';
   const abuserScore = abuserOk ? ipapiAbuserData.score : 0;
 
-  let score = 72;
+  let score = 60;
   if (flags.residential || kind === '住宅 IP') score = 92;
   else if (kind === '移动网络') score = 88;
-  else if (kind === '教育网络' || kind === '企业网络') score = 84;
   else if (kind === '商业机房') score = 68;
 
-  // ipapi.is abuser_score 扣分
   if (abuserOk && abuserLevel) {
     const lv = abuserLevel.toLowerCase();
     if (lv.includes('very high') || lv.includes('extremely high')) score -= 32;
@@ -4430,7 +4426,6 @@ function purityScore(exit, ipapiAbuserData) {
     else if (lv.includes('low')) score -= 3;
   }
 
-  // flags 补充扣分
   const proxyCount = Number(evidence.proxyCount || 0);
   const vpnCount = Number(evidence.vpnCount || 0);
   const torCount = Number(evidence.torCount || 0);
@@ -4439,10 +4434,8 @@ function purityScore(exit, ipapiAbuserData) {
   if (torCount > 0 || flags.tor) score -= 50;
   if (abuserCount > 0 || flags.abuser) score -= 30;
   if (proxyVpnEvidenceCount >= 2) score -= 20;
-  else if (proxyVpnEvidenceCount === 1) score -= 12;
+  else if (proxyVpnEvidenceCount === 1) score -= 15;
 
-  // 机房额外扣分
-  if (flags.datacenter || flags.hosting || flags.cloud) score -= 5;
   if (flags.residential && !flags.proxy && !flags.vpn && !flags.tor && score < 90) score += 3;
 
   score = Math.max(0, Math.min(100, Math.round(score)));
