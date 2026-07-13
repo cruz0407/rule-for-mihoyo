@@ -27,6 +27,7 @@
  */
 
 export default async function (ctx) {
+  try {
   const env = ctx.env || {};
   const C = palette();
   const SCHEME = detectScheme(ctx);
@@ -76,7 +77,6 @@ export default async function (ctx) {
 
   const MAINLAND_LATENCY_URLS = [
     "http://connect.rom.miui.com/generate_204",
-    "http://wifi.vivo.com.cn/generate_204",
     "https://www.baidu.com/favicon.ico",
     "https://www.qq.com/favicon.ico",
     "https://www.aliyun.com/favicon.ico"
@@ -288,7 +288,7 @@ export default async function (ctx) {
   function latencyLabel(url) {
     const h = url.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace("www.", "");
     const map = {
-      "connect.rom.miui.com": "miui", "wifi.vivo.com.cn": "vivo",
+      "connect.rom.miui.com": "miui",
       "www.baidu.com": "baidu", "www.qq.com": "qq", "www.aliyun.com": "aliyun",
       "cp.cloudflare.com": "CF", "www.gstatic.com": "gstatic",
       "www.google.com": "google", "www.cloudflare.com": "CFcdn"
@@ -935,27 +935,23 @@ export default async function (ctx) {
   }
 
   async function latencyProbe(url, direct) {
-    const startedAt = Date.now();
-
-    try {
-      const response = direct
-        ? await ctx.http.get(url, directRequestOptions())
-        : await ctx.http.get(url, requestOptions());
-
-      return {
-        ok: response.status >= 200 && response.status < 400,
-        status: response.status,
-        ms: Math.max(1, Date.now() - startedAt),
-        url: url
-      };
-    } catch (_) {
-      return {
-        ok: false,
-        status: 0,
-        ms: Math.max(1, Date.now() - startedAt),
-        url: url
-      };
+    var bestMs = 9999, bestOk = false, bestStatus = 0;
+    for (var r = 0; r < 3; r++) {
+      const startedAt = Date.now();
+      try {
+        const response = direct
+          ? await ctx.http.get(url, directRequestOptions())
+          : await ctx.http.get(url, requestOptions());
+        const ms = Math.max(1, Date.now() - startedAt);
+        const ok = response.status >= 200 && response.status < 400;
+        if (ok && ms < bestMs) { bestMs = ms; bestOk = true; bestStatus = response.status; }
+        else if (!bestOk && ms < bestMs) { bestMs = ms; bestStatus = response.status; }
+      } catch (_) {
+        const ms = Math.max(1, Date.now() - startedAt);
+        if (ms < bestMs) { bestMs = ms; }
+      }
     }
+    return { ok: bestOk, status: bestStatus, ms: bestMs, url: url };
   }
 
   async function getProxyCheck(ip) {
@@ -1262,6 +1258,9 @@ export default async function (ctx) {
     localLatency,
     quic,
     ipapiAbuserData,
+    speedDown,
+    speedUp,
+    publicIPv6,
     media,
     ai
   ] = await Promise.all([
@@ -1272,6 +1271,9 @@ export default async function (ctx) {
     getLocalLatency(),
     getQuic(),
     getIPApiAbuserScore(""),
+    getSpeedDownload(),
+    getSpeedUpload(),
+    getPublicIPv6(),
 
     Promise.all([
       testService("netflix", "Netflix", "netflix", C.netflix, "", mediaPolicyMap.netflix),
@@ -1318,9 +1320,17 @@ export default async function (ctx) {
     networkName = carrierByDirectISP;
   }
 
+  if (!networkName && radioType) {
+    networkName = radioType;
+  }
   if (!networkName) {
     networkName = "移动数据";
   }
+
+  // ── DNS 泄漏检测 ──────────────────────────────────────────────────
+  const isDnsLeak = (POLICY || LMT_POLICY || AI_POLICY) &&
+    (localExit.countryCode === "CN" || (localExit.country || "").includes("中国")) &&
+    exit.countryCode !== "CN" && exit.countryCode !== "";
 
   const dns = chooseDNSProvider(baseDNS, verifiedDNS);
   const dnsLabel = dnsTinyLabel(dns.short || dns.full);
@@ -2303,6 +2313,24 @@ export default async function (ctx) {
     );
   }
 
+  function speedRow() {
+    const down = Number(speedDown) || 0, up = Number(speedUp) || 0;
+    if (down === 0 && up === 0) return row([
+      image("arrow.up.and.down.circle.fill", C.muted, 9, 9),
+      text("测速失败", 6, "medium", C.muted)
+    ], { gap: 4, padding: [2, 0] });
+    const fmt = function(kb) { return kb >= 1024 ? (kb / 1024).toFixed(1) + "MB/s" : kb + "KB/s"; };
+    const downStr = "↓ " + fmt(down), upStr = "↑ " + fmt(up);
+    const avgMB = (down + up) / 2 / 1024;
+    const spdColor = avgMB >= 10 ? C.green : avgMB >= 2 ? C.amber : C.red;
+    return row([
+      image("arrow.up.and.down.circle.fill", spdColor, 9, 9),
+      text("测速", 6.5, "semibold", spdColor, { maxLines: 1 }),
+      text(downStr + "  " + upStr, 6, "medium", C.subtext, { maxLines: 1, flex: 1 }),
+      ...(publicIPv6 ? [text("v6: " + publicIPv6.substring(0, 15) + "…", 5, "medium", C.muted, { maxLines: 1 })] : [])
+    ], { gap: 4, padding: [1, 0] });
+  }
+
   function footer() {
     return card(
       [
@@ -2391,6 +2419,7 @@ export default async function (ctx) {
         }
       ),
 
+      speedRow(),
       footer()
     ],
     {
