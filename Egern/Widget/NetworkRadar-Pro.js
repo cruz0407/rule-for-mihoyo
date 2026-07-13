@@ -11,7 +11,6 @@
  * - YS=0 或不设置：不打码
  * - XY：手动指定协议，例如 VLESS / Trojan / HY2 / AnyTLS
  * - XY 未设置：继续按原逻辑从 Egern 上下文 / 节点元数据 / 节点名尝试识别
- * - REFRESH：刷新间隔（分钟），默认 5。如 REFRESH=10 则每 10 分钟刷新
  * - LOCAL_POLICY：本地网络检测策略，默认 DIRECT。路由器有透明代理时可设为具体策略名
  *
  * ✨ Pro 增强项（相比原版）：
@@ -45,7 +44,6 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const REFRESH_MINUTES = Number(clean(env.REFRESH)) || 5;
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -2412,9 +2410,6 @@ export default async function (ctx) {
     padding: S(8),
     gap: 0,
     backgroundColor: C.root,
-    refreshAfter: new Date(
-      Date.now() + REFRESH_MINUTES * 60 * 1000
-    ).toISOString(),
     children: [
       dashboard,
       spacer()
