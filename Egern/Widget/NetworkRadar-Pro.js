@@ -27,7 +27,6 @@
  */
 
 export default async function (ctx) {
-  try {
   const env = ctx.env || {};
   const C = palette();
   const SCHEME = detectScheme(ctx);
@@ -131,6 +130,7 @@ export default async function (ctx) {
     : [];
 
   let networkName = getLocalNetworkName(device);
+  const radioMap = { "GPRS": "2.5G", "EDGE": "2.75G", "WCDMA": "3G", "LTE": "4G", "NR": "5G", "NRNSA": "5G" };
 
   const localIP =
     clean(
@@ -1121,6 +1121,25 @@ export default async function (ctx) {
     } catch (_) { return { ok: false, detail: "Cross" }; }
   }
 
+  async function speedTest() {
+    const dl = async () => {
+      try { const s = Date.now(); const r = await ctx.http.get("https://speed.cloudflare.com/__down?bytes=102400", { timeout: 4000 }); await r.text(); const ms = Date.now() - s; return ms > 0 ? Math.round(102400 / ms * 1000 / 1024) : 0; } catch (_) { return 0; }
+    };
+    const ul = async () => {
+      try { const s = Date.now(); const r = await ctx.http.post("https://speed.cloudflare.com/__up", { body: "x".repeat(102400), timeout: 4000 }); await r.text(); const ms = Date.now() - s; return ms > 0 ? Math.round(102400 / ms * 1000 / 1024) : 0; } catch (_) { return 0; }
+    };
+    const [dlKB, ulKB] = await Promise.all([dl(), ul()]);
+    return { dl: dlKB || 0, ul: ulKB || 0 };
+  }
+
+  async function getIPv6() {
+    try {
+      const r = await ctx.http.get("https://api64.ipify.org?format=json", { timeout: 3000 });
+      const d = JSON.parse(await r.text());
+      return (d && d.ip && d.ip.includes(":")) ? d.ip : "";
+    } catch (_) { return ""; }
+  }
+
   async function getQuic() {
     const urls = QUIC_TRACE_URLS.map(function (url) {
       return url + "?_=" + Date.now() + randomAlphaNum(5);
@@ -1271,6 +1290,8 @@ export default async function (ctx) {
     getLocalLatency(),
     getQuic(),
     getIPApiAbuserScore(""),
+    speedTest(),
+    getIPv6(),
     getSpeedDownload(),
     getSpeedUpload(),
     getPublicIPv6(),
@@ -1338,6 +1359,22 @@ export default async function (ctx) {
   const nat = detectNAT(localIP, exit.ip);
   const purity = purityScore(exit, ipapiAbuserData);
   const risk = riskLevel(exit, purity, ipapiAbuserData);
+
+  // DNS 泄漏检测
+  const localCC = (localExit && localExit.countryCode) || "";
+  const exitCC = (exit && exit.countryCode) || "";
+  const isDnsLeak = !!POLICY && localCC === "CN" && exitCC === "CN";
+
+  // 测速格式化
+  const fmtSpd = (kb) => kb > 0 ? (kb >= 1024 ? (kb/1024).toFixed(1)+"MB/s" : kb+"KB/s") : "--";
+  const dlSpeed = (speedData && speedData.dl) || 0;
+  const ulSpeed = (speedData && speedData.ul) || 0;
+  const speedStr = "↓" + fmtSpd(dlSpeed) + " ↑" + fmtSpd(ulSpeed);
+  const avgMB = (dlSpeed + ulSpeed) / 2 / 1024;
+  const speedColor = (dlSpeed === 0 && ulSpeed === 0) ? C.muted : (avgMB >= 10 ? C.green : avgMB >= 2 ? C.amber : C.red);
+
+  // IPv6
+  const publicIPv6 = ipv6Data || "";
 
   const proxyLatencyColor = proxyLatency.ok
     ? proxyLatency.ms <= 220 ? C.green : C.amber
@@ -1789,7 +1826,7 @@ export default async function (ctx) {
             metricBox(
               "network",
               "IPV4/IPV6",
-              (hasIPv4 ? "✓" : "×") + "/" + (hasIPv6 ? "✓" : "×"),
+              (hasIPv4 ? "✓" : "×") + "/" + (hasIPv6 ? "✓" : "×") + (publicIPv6 ? "+" : ""),
               hasIPv4 && hasIPv6
                 ? C.green
                 : hasIPv4
@@ -2339,17 +2376,24 @@ export default async function (ctx) {
             footerCell(
               "server.rack",
               "ISP / 厂商",
-              shortISP(exit.isp),
-              C.blue
+              shortISP(exit.isp) + (isDnsLeak ? " ⚠" : ""),
+              isDnsLeak ? C.red : C.blue
             ),
 
             footerCell(
               "house.fill",
               "属性类型",
-              exit.kind,
+              exit._isResidential === true ? "原生住宅" : exit._isResidential === false ? "商业机房" : (exit.kind || "未知"),
               exit.kind === "商业机房"
                 ? C.amber
                 : C.green
+            ),
+
+            footerCell(
+              "arrow.up.and.down.circle.fill",
+              "网速",
+              speedStr,
+              speedColor
             ),
 
             footerCell(
