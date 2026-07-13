@@ -42,6 +42,7 @@ export default async function (ctx) {
   const LOCAL_POLICY = clean(env.LOCAL_POLICY) || "DIRECT";
 
   const TIMEOUT = 4500;
+  const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
   const REFRESH_MINUTES = Number(clean(env.REFRESH)) || 5;
@@ -941,8 +942,8 @@ export default async function (ctx) {
       const startedAt = Date.now();
       try {
         const response = direct
-          ? await ctx.http.get(url, directRequestOptions())
-          : await ctx.http.get(url, requestOptions());
+          ? await ctx.http.get(url, directRequestOptions({ timeout: LATENCY_TIMEOUT }))
+          : await ctx.http.get(url, requestOptions({ timeout: LATENCY_TIMEOUT }));
         const ms = Math.max(1, Date.now() - startedAt);
         const ok = response.status >= 200 && response.status < 400;
         if (ok && ms < bestMs) { bestMs = ms; bestOk = true; bestStatus = response.status; }
