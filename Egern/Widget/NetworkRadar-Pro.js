@@ -79,7 +79,7 @@ export default async function (ctx) {
   const MAINLAND_LATENCY_URLS = [
     "http://connect.rom.miui.com/generate_204",
     "http://wifi.vivo.com.cn/generate_204",
-    "http://204.ustc.edu.cn/generate_204",
+    "http://www.qualcomm.cn/generate_204",
     "http://captive.apple.com/hotspot-detect.html"
   ];
 
@@ -290,7 +290,7 @@ export default async function (ctx) {
     const h = url.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace("www.", "");
     const map = {
       "connect.rom.miui.com": "miui", "wifi.vivo.com.cn": "vivo",
-      "204.ustc.edu.cn": "ustc", "captive.apple.com": "apple",
+      "qualcomm.cn": "高通", "captive.apple.com": "apple",
       "cp.cloudflare.com": "CF", "www.gstatic.com": "gstatic",
       "www.google.com": "google", "www.cloudflare.com": "CFcdn"
     };
