@@ -2304,6 +2304,13 @@ export default async function (ctx) {
             ),
 
             footerCell(
+              "sparkles",
+              "服务能力",
+              nodeProfile.service.score + "/" + nodeProfile.service.max,
+              nodeProfile.service.score >= 8 ? C.green : nodeProfile.service.score >= 5 ? C.amber : C.red
+            ),
+
+            footerCell(
               "arrow.clockwise",
               "风险",
               nodeProfile.risk + (isDnsLeak ? " ⚠" : ""),
