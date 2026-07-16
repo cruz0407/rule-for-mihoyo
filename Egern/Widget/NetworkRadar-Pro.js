@@ -1865,145 +1865,37 @@ export default async function (ctx) {
   }
 
   function proxyCard() {
-    const city =
-      clean(exit.city) ||
-      clean(exit.country) ||
-      "未知地区";
-
-    const tagOne = exit.kind || "未知网络";
-
-    const tagTwo =
-      clean(exit.cloudProvider) ||
-      (
-        exit._isResidential === true
-          ? "原生住宅"
-          : exit._isResidential === false
-            ? "商业机房"
-            : exit.kind === "住宅 IP"
-              ? "原生住宅"
-              : exit.kind === "移动网络"
-                ? "移动出口"
-                : exit.kind === "商业机房"
-                  ? "商业机房"
-                  : "出口网络"
-      );
-
-    const tagOneTone =
-      exit.kind === "商业机房"
-        ? C.amber
-        : C.green;
-
-    const tagOneFill =
-      exit.kind === "商业机房"
-        ? C.amberSoft
-        : C.greenSoft;
-
-    const tagTwoTone = C.green;
-    const tagTwoFill = C.greenSoft;
-
     return card(
       [
         sectionTitle(
           "point.3.connected.trianglepath.dotted",
           "当前代理",
-          pill(
-            proxyLatency.ok ? "连接正常" : "检测失败",
-            proxyLatency.ok ? C.green : C.red,
-            proxyLatency.ok ? C.greenSoft : C.redSoft
-          ),
+          pill(proxyLatency.ok ? "正常" : "异常", proxyLatency.ok ? C.green : C.red, proxyLatency.ok ? C.greenSoft : C.redSoft),
           C.purple
         ),
 
-        row(
-          [
-            flagBox(),
+        row([
+          text(flag(nodeProfile.countryCode) || "🌐", 10, "regular", C.text),
+          text(nodeProfile.city, 11, "semibold", C.text, { flex: 1, maxLines: 1, minScale: 0.6 })
+        ], { gap: 4 }),
 
-            col(
-              [
-                row(
-                  [
-                    text(flag(exit.countryCode) || "🌐", 7, "regular", C.text),
+        text(shortISP(exit.isp), 7.8, "medium", C.subtext, { maxLines: 1, minScale: 0.62 }),
 
-                    text(city, 9.2, "semibold", C.text, {
-                      flex: 1,
-                      maxLines: 1,
-                      minScale: 0.55
-                    })
-                  ],
-                  { gap: 2 }
-                ),
+        row([
+          pill(nodeProfile.typeLabel, nodeProfile.ip.score > 15 ? C.green : C.amber, nodeProfile.ip.score > 15 ? C.greenSoft : C.amberSoft, { padding: [2, 5] })
+        ], { gap: 4 }),
 
-                text(shortISP(exit.isp), 7.2, "medium", C.subtext, {
-                  maxLines: 1,
-                  minScale: 0.62
-                }),
-
-                proxyTagRows(
-                  tagOne,
-                  tagTwo,
-                  tagOneTone,
-                  tagOneFill,
-                  tagTwoTone,
-                  tagTwoFill
-                )
-              ],
-              {
-                flex: 1,
-                gap: 1
-              }
-            ),
-
-          ],
-          {
-            gap: 8,
-            alignItems: "center"
-          }
-        ),
-
-        row(
-          [
-            metricBox(
-              "circle.hexagongrid.fill",
-              "NAT",
-              nat.label,
-              natColor
-            ),
-
-            metricBox(
-              "paperplane.fill",
-              "UDP/QUIC",
-              quic.value,
-              quicColor,
-              {
-                labelSize: 4.25,
-                labelMinScale: 0.38
-              }
-            ),
-
-            metricBox(
-              "slider.horizontal.3",
-              "协议",
-              NODE_PROTOCOL,
-              C.purple,
-              {
-                valueSize: 5.4,
-                valueMinScale: 0.34
-              }
-            )
-          ],
-          { gap: 2 }
-        ),
+        row([
+          metricBox("circle.hexagongrid.fill", "NAT", nat.label, natColor),
+          metricBox("paperplane.fill", "UDP/QUIC", quic.value, quicColor, { labelSize: 4.25 }),
+          metricBox("slider.horizontal.3", "协议", NODE_PROTOCOL, C.purple, { valueSize: 5.4 })
+        ], { gap: 2 }),
 
         delayPillRow(proxyLatency, proxyLatencyColor)
       ],
-      {
-        flex: 1,
-        padding: [6, 7],
-        gap: 4
-      }
+      { flex: 1, padding: [6, 7], gap: 4 }
     );
   }
-
   function serviceLogoLarge(item) {
     const base = {
       width: 23,
