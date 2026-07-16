@@ -52,7 +52,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.2.0";
+  const VERSION = "1.2.1";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -1321,6 +1321,7 @@ export default async function (ctx) {
   const purity = purityScore(exit, apiFullData);
   const risk = riskLevel(exit, purity, apiFullData);
   const nqr = nodeQualityRating(exit, apiFullData, proxyLatency, quic, hasIPv6, dnsLabel!=="未知", nat.label==="Open", mediaPassed, aiPassed);
+  const nodeProfile = { isp: nqr.isp.name, score: nqr.total, grade: nqr.grade, risk: risk, ispScore: nqr.isp.score };
 
 
   const proxyLatencyColor = proxyLatency.ok
@@ -1797,8 +1798,7 @@ export default async function (ctx) {
         delayPillRow(localLatency, localLatencyColor)
       ],
       {
-        flex: 1,
-        height: 112
+        flex: 1
       }
     );
   }
@@ -1953,17 +1953,6 @@ export default async function (ctx) {
               }
             ),
 
-            row(
-              [
-                scoreGauge()
-              ],
-              {
-                width: 68,
-                height: 52,
-                alignItems: "center",
-                justifyContent: "center"
-              }
-            )
           ],
           {
             gap: 8,
@@ -2009,9 +1998,8 @@ export default async function (ctx) {
       ],
       {
         flex: 1,
-        height: 112,
         padding: [6, 7],
-        gap: 3
+        gap: 4
       }
     );
   }
@@ -2302,38 +2290,24 @@ export default async function (ctx) {
         row(
           [
             footerCell(
-              "server.rack",
-              "ISP / 厂商",
-              shortISP(exit.isp) + (isDnsLeak ? " ⚠" : ""),
-              isDnsLeak ? C.red : C.blue
-            ),
-
-            footerCell(
               "star.fill",
-              "节点质量",
-              nqr.grade + " · " + nqr.total + "分",
-              nqr.total >= 80 ? C.green : nqr.total >= 55 ? C.amber : C.red
-            ),
-
-            footerCell(
-              "checkmark.shield.fill",
               "ISP品质",
-              nqr.isp.name,
-              nqr.isp.score >= 24 ? C.green : nqr.isp.score >= 14 ? C.amber : C.red
+              nodeProfile.isp,
+              nodeProfile.ispScore >= 24 ? C.green : nodeProfile.ispScore >= 14 ? C.amber : C.red
             ),
 
             footerCell(
               "shield.lefthalf.filled",
-              "服务能力",
-              nqr.service.score + "/" + nqr.service.max,
-              nqr.service.score >= 8 ? C.green : nqr.service.score >= 5 ? C.amber : C.red
+              "节点质量",
+              nodeProfile.grade + " · " + nodeProfile.score + "分",
+              nodeProfile.score >= 80 ? C.green : nodeProfile.score >= 55 ? C.amber : C.red
             ),
 
             footerCell(
               "arrow.clockwise",
               "风险",
-              risk,
-              risk === "低风险" ? C.green : risk === "中风险" ? C.amber : C.red
+              nodeProfile.risk + (isDnsLeak ? " ⚠" : ""),
+              nodeProfile.risk === "低风险" ? C.green : nodeProfile.risk === "中风险" ? C.amber : C.red
             )
           ],
           {
@@ -2364,7 +2338,6 @@ export default async function (ctx) {
           proxyCard()
         ],
         {
-          height: 112,
           gap: 6,
           alignItems: "start"
         }
