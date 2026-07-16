@@ -52,7 +52,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.2.1";
+  const VERSION = "1.3.0";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -1321,7 +1321,7 @@ export default async function (ctx) {
   const purity = purityScore(exit, apiFullData);
   const risk = riskLevel(exit, purity, apiFullData);
   const nqr = nodeQualityRating(exit, apiFullData, proxyLatency, quic, hasIPv6, dnsLabel!=="未知", nat.label==="Open", mediaPassed, aiPassed);
-  const nodeProfile = { isp: nqr.isp.name, score: nqr.total, grade: nqr.grade, risk: risk, ispScore: nqr.isp.score };
+  const nodeProfile = { isp: nqr.isp.name, score: nqr.total, grade: nqr.grade, risk: risk, ispScore: nqr.isp.score, type: exit.kind || "未知", typeLabel: exit.flags?.residential ? "🏠 住宅" : exit.kind === "移动网络" ? "📱 移动" : exit.kind === "商业机房" ? "🏢 机房" : "🌐 未知", countryCode: exit.countryCode || "", city: clean(exit.city) || clean(exit.country) || "未知地区", service: nqr.service, network: nqr.network, ip: nqr.ip };
 
 
   const proxyLatencyColor = proxyLatency.ok
