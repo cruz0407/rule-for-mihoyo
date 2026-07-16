@@ -52,7 +52,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.3.0";
+  const VERSION = "1.3.1";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -1322,6 +1322,8 @@ export default async function (ctx) {
   const risk = riskLevel(exit, purity, apiFullData);
   const nqr = nodeQualityRating(exit, apiFullData, proxyLatency, quic, hasIPv6, dnsLabel!=="未知", nat.label==="Open", mediaPassed, aiPassed);
   const nodeProfile = { isp: nqr.isp.name, score: nqr.total, grade: nqr.grade, risk: risk, ispScore: nqr.isp.score, type: exit.kind || "未知", typeLabel: exit.flags?.residential ? "🏠 住宅" : exit.kind === "移动网络" ? "📱 移动" : exit.kind === "商业机房" ? "🏢 机房" : "🌐 未知", countryCode: exit.countryCode || "", city: clean(exit.city) || clean(exit.country) || "未知地区", service: nqr.service, network: nqr.network, ip: nqr.ip };
+  const nodeRank = rankNode(nodeProfile, apiFullData, proxyLatency, quic, hasIPv6, nat.label==="Open", mediaPassed, aiPassed);
+
 
 
   const proxyLatencyColor = proxyLatency.ok
@@ -1874,17 +1876,20 @@ export default async function (ctx) {
           C.purple
         ),
 
+        // 城市行
         row([
           text(flag(nodeProfile.countryCode) || "🌐", 10, "regular", C.text),
-          text(nodeProfile.city, 11, "semibold", C.text, { flex: 1, maxLines: 1, minScale: 0.6 })
+          text(nodeProfile.city, 10.5, "semibold", C.text, { flex: 1, maxLines: 1, minScale: 0.62 }),
+          text((proxyLatency.ok ? proxyLatency.ms + "ms" : "--") + " · " + NODE_PROTOCOL, 5.8, "medium", proxyLatency.ok ? proxyLatencyColor : C.muted, { maxLines: 1 })
         ], { gap: 4 }),
 
-        text(shortISP(exit.isp), 7.8, "medium", C.subtext, { maxLines: 1, minScale: 0.62 }),
-
+        // ISP + 类型标签行
         row([
-          pill(nodeProfile.typeLabel, nodeProfile.ip.score > 15 ? C.green : C.amber, nodeProfile.ip.score > 15 ? C.greenSoft : C.amberSoft, { padding: [2, 5] })
-        ], { gap: 4 }),
+          text(shortISP(exit.isp), 7.8, "medium", C.subtext, { flex: 1, maxLines: 1, minScale: 0.62 }),
+          pill(nodeProfile.typeLabel, nodeProfile.ip.score > 15 ? C.green : C.amber, nodeProfile.ip.score > 15 ? C.greenSoft : C.amberSoft, { padding: [2,5] })
+        ], { gap: 6 }),
 
+        // 指标行
         row([
           metricBox("circle.hexagongrid.fill", "NAT", nat.label, natColor),
           metricBox("paperplane.fill", "UDP/QUIC", quic.value, quicColor, { labelSize: 4.25 }),
@@ -2176,55 +2181,55 @@ export default async function (ctx) {
     );
   }
 
-  function footer() {
-    return card(
-      [
-        row(
-          [
-            footerCell(
-              "star.fill",
-              "ISP品质",
-              nodeProfile.isp,
-              nodeProfile.ispScore >= 24 ? C.green : nodeProfile.ispScore >= 14 ? C.amber : C.red
-            ),
-
-            footerCell(
-              "shield.lefthalf.filled",
-              "节点质量",
-              nodeProfile.grade + " · " + nodeProfile.score + "分",
-              nodeProfile.score >= 80 ? C.green : nodeProfile.score >= 55 ? C.amber : C.red
-            ),
-
-            footerCell(
-              "sparkles",
-              "服务能力",
-              nodeProfile.service.score + "/" + nodeProfile.service.max,
-              nodeProfile.service.score >= 8 ? C.green : nodeProfile.service.score >= 5 ? C.amber : C.red
-            ),
-
-            footerCell(
-              "arrow.clockwise",
-              "风险",
-              nodeProfile.risk + (isDnsLeak ? " ⚠" : ""),
-              nodeProfile.risk === "低风险" ? C.green : nodeProfile.risk === "中风险" ? C.amber : C.red
-            )
-          ],
-          {
-            height: 30,
-            padding: [0, 0],
-            gap: 0,
-            alignItems: "center"
-          }
-        )
-      ],
-      {
-        height: 40,
-        padding: [4, 5],
-        gap: 0
-      }
-    );
+  // 统一节点评级：五维加权 + 扣分原因记录
+  function rankNode(np, af, pLat, qc, v6, natOk, mediaOk, aiOk) {
+    var f=af||{}, reasons=[], total=100;
+    // ISP品质 (25分)
+    var ispS=np.ispScore||15; if(ispS<15){total-=10;reasons.push("ISP-"+ (15-ispS));}
+    // IP属性 (20分)
+    if(f.isTor){total-=20;reasons.push("Tor -20");}
+    else if(f.isVpn){total-=14;reasons.push("VPN -14");}
+    else if(f.isProxy||f.isDatacenter){total-=8;reasons.push("数据中心 -8");}
+    else if(f.isMobile){total-=0;}
+    else{total-=4;}
+    // 信誉 (15分)
+    if(f.ok&&f.abuserScore>0){if(f.abuserScore>=60){total-=15;reasons.push("滥用高风险 -15");}
+      else if(f.abuserScore>=40){total-=10;reasons.push("滥用中风险 -10");}
+      else if(f.abuserScore>=20){total-=5;reasons.push("滥分偏高 -5");}}
+    if(f.ok&&f.isAbuser){total-=5;reasons.push("标记滥用 -5");}
+    // 网络质量 (25分)
+    var netS=0;
+    if(pLat&&pLat.ok){if(pLat.ms<=50)netS=12;else if(pLat.ms<=100)netS=10;else if(pLat.ms<=200)netS=7;else if(pLat.ms<=400)netS=4;else netS=2;}
+    if(qc&&qc.value&&qc.value!=="❌")netS+=3;if(v6)netS+=3;if(natOk)netS+=2;
+    if(netS<15){total-=(15-netS);reasons.push("网络扣"+ (15-netS));}
+    // 服务 (15分)
+    var svcAll=mediaOk+aiOk;
+    if(svcAll<6){total-=8;reasons.push("解锁不足");}else if(svcAll<10){total-=3;}
+    // 延迟优异加分
+    if(pLat&&pLat.ok&&pLat.ms<=60&&total<95){total+=3;reasons.push("延迟优秀 +3");}
+    total=Math.max(10,Math.min(100,total));
+    var grade=total>=90?"S级":total>=75?"A级":total>=60?"B级":"C级";
+    var riskLabel=total>=75?"低风险":total>=55?"中风险":"高风险";
+    return {total:total,grade:grade,reasons:reasons,risk:riskLabel};
   }
 
+  function footer() {
+    var rc=nodeRank.reasons.length>0?nodeRank.reasons.slice(0,3).join(" · "):"无扣分项";
+    var avgSvc=Math.round((mediaPassed+aiPassed)/12*10);
+    return card(
+      [
+        row([
+          text("🌟 "+nodeRank.grade+" · "+nodeRank.total+"分", 7.5, "semibold", nodeRank.total>=80?C.green:nodeRank.total>=55?C.amber:C.red, { flex:1, maxLines:1 }),
+          text("📋 "+rc, 5.5, "medium", C.muted, { flex:1, maxLines:1, textAlign:"right" })
+        ],{height:14,padding:[0,0],gap:4,alignItems:"center"}),
+        row([
+          text("🛡 "+nodeRank.risk+" · "+shortISP(exit.isp), 5.5, "medium", C.subtext, { flex:1, maxLines:1 }),
+          text("✅ 服务 "+mediaPassed+"/6 ▶️" + " · "+aiPassed+"/6 🤖", 5.5, "medium", C.subtext, { maxLines:1, textAlign:"right" })
+        ],{height:12,padding:[0,0],gap:4,alignItems:"center"})
+      ],
+      { padding:[4,5],gap:2 }
+    );
+  }
 
 
   const dashboard = col(
