@@ -49,7 +49,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.3.7";
+  const VERSION = "1.3.9";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -2405,9 +2405,22 @@ export default async function (ctx) {
     const abuserTone = purityRating.abuserLabel === "--" ? "muted" :
       abuserLower.includes("high") ? "red" :
       (abuserLower.includes("elevated") || abuserLower.includes("moderate")) ? "amber" : "green";
-    const location = clean(exit.city) || clean(exit.country) || "\u672a\u77e5";
-    const latency = proxyLatency.ok ? proxyLatency.ms + "ms" : "--";
-    const servicePassed = mediaPassed + aiPassed;
+    const proxyCheckRisk = purityRating.raw && purityRating.raw.proxycheckRisk !== null
+      ? Math.round(purityRating.raw.proxycheckRisk)
+      : null;
+    const proxyCheckValue = proxyCheckRisk === null ? "--" : "\u98ce\u9669 " + proxyCheckRisk;
+    const proxyCheckTone = proxyCheckRisk === null ? "muted" :
+      proxyCheckRisk <= 25 ? "green" :
+      proxyCheckRisk < 60 ? "amber" : "red";
+    const proxyCheckData = exit.proxyCheck || emptyProxyCheckRisk();
+    const exitFlags = exit.flags || {};
+    const proxyFlag = Boolean(apiFullData.isProxy || proxyCheckData.isProxy || exitFlags.proxy);
+    const vpnFlag = Boolean(apiFullData.isVpn || proxyCheckData.isVpn || exitFlags.vpn);
+    const torFlag = Boolean(apiFullData.isTor || proxyCheckData.isTor || exitFlags.tor);
+    const flagsValue = (proxyFlag ? "\u6709" : "\u5426") + " / " +
+      (vpnFlag ? "\u6709" : "\u5426") + " / " +
+      (torFlag ? "\u6709" : "\u5426");
+    const flagsTone = torFlag ? "red" : (proxyFlag || vpnFlag) ? "amber" : "green";
     const headerStatus = row(
       [
         pill(scoreText, gradeTone, gradeFill, { padding: [1, 3] }),
@@ -2430,19 +2443,22 @@ export default async function (ctx) {
             footerInlineMetric("checkmark.shield.fill", "IPPure", ippureValue, ippureTone, {
               style: { flex: 0.95 }
             }),
-            footerInlineMetric("building.2.fill", "\u5c5e\u6027", purityRating.ipType.label, purityRating.ipType.tone),
+            footerInlineMetric("shield.checkerboard", "ProxyCheck", proxyCheckValue, proxyCheckTone, {
+              labelMinScale: 0.42,
+              style: { flex: 1.05 }
+            }),
             footerInlineMetric("exclamationmark.shield.fill", "Abuser", purityRating.abuserLabel, abuserTone, {
               style: { flex: 0.95 }
             }),
             footerInlineMetric(
-              "network",
-              shortISP(exit.isp) + " \u00b7 " + location,
-              latency + " \u00b7 " + servicePassed + "/12",
-              "blue",
+              "flag.fill",
+              "Proxy/VPN/Tor",
+              flagsValue,
+              flagsTone,
               {
-                labelMinScale: 0.38,
-                valueMinScale: 0.4,
-                style: { flex: 1.35 }
+                labelMinScale: 0.34,
+                valueMinScale: 0.55,
+                style: { flex: 1.25 }
               }
             )
           ],
