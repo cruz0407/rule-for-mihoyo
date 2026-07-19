@@ -49,7 +49,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.3.4";
+  const VERSION = "1.3.6";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -670,52 +670,74 @@ export default async function (ctx) {
   }
 
   async function getLocalExit() {
+    const nowValue = Date.now();
     const results = await Promise.all([
+      getJSONDirect("https://myip.ipip.net/json?_=" + nowValue),
+      getJSONDirect("https://ipservice.ws.126.net/locate/api/getLocByIp?_=" + nowValue),
       getJSONDirect(
         "http://ip-api.com/json/?lang=zh-CN&fields=status,message,query,country,countryCode,regionName,city,isp,org,as,asname&_=" +
-          Date.now()
+          nowValue
       ),
-      getJSONDirect("https://ipwho.is/?lang=zh-CN&_=" + Date.now()),
-      getJSONDirect("https://api.ipapi.is/?_=" + Date.now())
+      getJSONDirect("https://ipwho.is/?lang=zh-CN&_=" + nowValue),
+      getJSONDirect("https://api.ipapi.is/?_=" + nowValue)
     ]);
 
+    const parsers = [
+      parseIPIPLocalExit,
+      parseNetEaseLocalExit,
+      function(data) { return parseLocalExit(data, false); },
+      function(data) { return parseLocalExit(data, false); },
+      function(data) { return parseLocalExit(data, false); }
+    ];
+
+    let foreignFallback = null;
+
     for (let index = 0; index < results.length; index += 1) {
-      const parsed = parseLocalExit(
-        results[index].data,
-        FORCE_LOCAL_MAINLAND
-      );
+      if (!results[index].ok || !results[index].data) continue;
+      const parsed = parsers[index](results[index].data);
+      if (!parsed || !parsed.ip) continue;
 
-      if (results[index].ok && parsed.ip) {
-        if (FORCE_LOCAL_MAINLAND && parsed.countryCode !== "CN") {
-          return {
-            ip: parsed.ip,
-            city: "",
-            region: "",
-            country: "中国",
-            countryCode: "CN",
-            isp: parsed.isp || "",
-            org: parsed.org || "",
-            asname: parsed.asname || "",
-            as: parsed.as || "",
-            label: "中国大陆"
-          };
-        }
-
+      if (parsed.countryCode === "CN" || clean(parsed.country).includes("\u4e2d\u56fd")) {
         return parsed;
       }
+
+      if (!foreignFallback) foreignFallback = parsed;
+    }
+
+    if (foreignFallback && !FORCE_LOCAL_MAINLAND) {
+      return foreignFallback;
+    }
+
+    if (foreignFallback) {
+      return {
+        ip: foreignFallback.ip,
+        city: "",
+        region: "",
+        country: "\u4e2d\u56fd",
+        countryCode: "CN",
+        isp: foreignFallback.isp || "",
+        org: foreignFallback.org || "",
+        asname: foreignFallback.asname || "",
+        as: foreignFallback.as || "",
+        label: "\u4e2d\u56fd\u5927\u9646",
+        viaRouterProxy: true,
+        detectedCountryCode: foreignFallback.countryCode || ""
+      };
     }
 
     return {
       ip: "",
       city: "",
       region: "",
-      country: "中国",
+      country: "\u4e2d\u56fd",
       countryCode: "CN",
       isp: "",
       org: "",
       asname: "",
       as: "",
-      label: "中国大陆"
+      label: "\u4e2d\u56fd\u5927\u9646",
+      viaRouterProxy: false,
+      detectedCountryCode: ""
     };
   }
 
@@ -1806,14 +1828,14 @@ export default async function (ctx) {
     const options = extra || {};
     return row(
       [
-        image(symbol, tone, 6.5, 6.5),
+        image(symbol, tone, 7, 7),
         col(
           [
-            text(label, 4.15, "medium", C.muted, {
+            text(label, 4.55, "medium", C.muted, {
               maxLines: 1,
               minScale: 0.68
             }),
-            text(value, options.valueSize || 5.35, "semibold", tone, {
+            text(value, options.valueSize || 5.85, "semibold", tone, {
               maxLines: 1,
               minScale: options.valueMinScale || 0.34
             })
@@ -1826,7 +1848,7 @@ export default async function (ctx) {
       ],
       {
         flex: 1,
-        height: 18,
+        height: 19,
         padding: [0, 2],
         gap: 2,
         backgroundColor: C.tileBg,
@@ -1942,12 +1964,12 @@ export default async function (ctx) {
         const color = ms <= 150 ? C.green : ms <= 300 ? C.amber : C.red;
         return col(
           [
-            text(d.label, 4.05, "semibold", C.subtext, {
+            text(d.label, 4.45, "semibold", C.subtext, {
               maxLines: 1,
               minScale: 0.55,
               textAlign: "center"
             }),
-            text(ms + "ms", 4.9, "bold", color, {
+            text(ms + "ms", 5.45, "bold", color, {
               maxLines: 1,
               minScale: 0.52,
               textAlign: "center"
@@ -1955,7 +1977,7 @@ export default async function (ctx) {
           ],
           {
             flex: 1,
-            height: 18,
+            height: 19,
             padding: [0, 2],
             gap: 0,
             alignItems: "center",
@@ -1965,7 +1987,7 @@ export default async function (ctx) {
         );
       }),
       {
-        height: 18,
+        height: 19,
         gap: 2
       }
     );
@@ -2341,14 +2363,14 @@ export default async function (ctx) {
     const options = extra || {};
     return row(
       [
-        image(symbol, color, options.iconSize || 7, options.iconSize || 7),
+        image(symbol, color, options.iconSize || 8, options.iconSize || 8),
         col(
           [
-            text(label, options.labelSize || 4.05, "medium", C.muted, {
+            text(label, options.labelSize || 4.7, "medium", C.muted, {
               maxLines: 1,
               minScale: options.labelMinScale || 0.5
             }),
-            text(value, options.valueSize || 5.2, "semibold", color, {
+            text(value, options.valueSize || 6.15, "semibold", color, {
               maxLines: 1,
               minScale: options.valueMinScale || 0.42
             })
@@ -2359,8 +2381,8 @@ export default async function (ctx) {
       Object.assign(
         {
           flex: 1,
-          height: 31,
-          padding: [2, 3],
+          height: 49,
+          padding: [5, 3],
           gap: 2,
           backgroundColor: options.backgroundColor || C.tileBg,
           borderRadius: 6
@@ -2375,8 +2397,8 @@ export default async function (ctx) {
       [
         row(
           [
-            image("shield.checkerboard", tone, 8, 8),
-            text(scoreText, 6.4, "semibold", tone, {
+            image("shield.checkerboard", tone, 9, 9),
+            text(scoreText, 7.1, "semibold", tone, {
               flex: 1,
               maxLines: 1,
               minScale: 0.52
@@ -2384,16 +2406,16 @@ export default async function (ctx) {
           ],
           { gap: 2, alignItems: "center" }
         ),
-        text(detailText, 4.55, "medium", detailTone, {
+        text(detailText, 5.2, "medium", detailTone, {
           maxLines: 1,
           minScale: 0.48
         })
       ],
       {
-        width: 91,
-        height: 31,
-        padding: [2, 3],
-        gap: 1,
+        width: 96,
+        height: 49,
+        padding: [5, 4],
+        gap: 2,
         backgroundColor: purityFill(purityRating.tone),
         borderRadius: 6
       }
@@ -2437,15 +2459,15 @@ export default async function (ctx) {
               {
                 labelMinScale: 0.42,
                 valueMinScale: 0.38,
-                style: { width: 88, flex: 0 },
+                style: { width: 94, flex: 0 },
                 backgroundColor: C.blueSoft
               }
             )
           ],
-          { height: 31, gap: 2, alignItems: "center" }
+          { height: 49, gap: 2, alignItems: "center" }
         )
       ],
-      { height: 41, padding: [4, 5], gap: 0 }
+      { height: 59, padding: [5, 5], gap: 0 }
     );
   }
 
@@ -2491,8 +2513,7 @@ export default async function (ctx) {
     gap: 0,
     backgroundColor: C.root,
     children: [
-      dashboard,
-      spacer()
+      dashboard
     ]
   };
 }
@@ -4040,6 +4061,58 @@ function numberOrNull(value) {
   }
 
   return parsed;
+}
+
+function parseIPIPLocalExit(data) {
+  const root = data && data.data && typeof data.data === "object" ? data.data : data;
+  if (!root || typeof root !== "object") return {};
+  const ip = clean(root.ip || root.query);
+  const location = Array.isArray(root.location) ? root.location : [];
+  if (!ip) return {};
+
+  const country = clean(location[0] || root.country || "\u4e2d\u56fd");
+  const region = clean(location[1] || root.province || root.region);
+  const city = clean(location[2] || root.city);
+  const isp = clean(location[4] || location[3] || root.isp || root.operator);
+  const isChina = !country || country.includes("\u4e2d\u56fd");
+
+  return {
+    ip: ip,
+    country: isChina ? "\u4e2d\u56fd" : country,
+    countryCode: isChina ? "CN" : countryCode(root.countryCode || root.country_code),
+    region: region,
+    city: city,
+    isp: isp,
+    org: isp,
+    asname: "",
+    as: "",
+    label: isChina ? mainlandAreaLabel(region, city) : formatLocalArea(countryCode(root.countryCode), country, region, city),
+    source: "IPIP"
+  };
+}
+
+function parseNetEaseLocalExit(data) {
+  const result = data && data.result && typeof data.result === "object" ? data.result : null;
+  if (!result) return {};
+  const ip = clean(result.ip || result.query);
+  if (!ip) return {};
+  const region = clean(result.province || result.region);
+  const city = clean(result.city);
+  const isp = clean(result.operator || result.company || result.isp);
+
+  return {
+    ip: ip,
+    country: "\u4e2d\u56fd",
+    countryCode: "CN",
+    region: region,
+    city: city,
+    isp: isp,
+    org: clean(result.company || result.operator),
+    asname: "",
+    as: "",
+    label: mainlandAreaLabel(region, city),
+    source: "NetEase"
+  };
 }
 
 function parseLocalExit(data, forceLocalMainland) {
