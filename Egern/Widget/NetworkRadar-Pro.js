@@ -1702,52 +1702,90 @@ export default async function (ctx) {
     );
   }
 
+  // Compact two-line metric used by the two network overview cards.
+  // It keeps the card dense while making every status item scanable at a glance.
+  function compactMetric(symbol, label, value, tone, extra) {
+    const options = extra || {};
+    return row(
+      [
+        image(symbol, tone, 6.5, 6.5),
+        col(
+          [
+            text(label, 4.15, "medium", C.muted, {
+              maxLines: 1,
+              minScale: 0.68
+            }),
+            text(value, options.valueSize || 5.35, "semibold", tone, {
+              maxLines: 1,
+              minScale: options.valueMinScale || 0.34
+            })
+          ],
+          {
+            flex: 1,
+            gap: 0
+          }
+        )
+      ],
+      {
+        flex: 1,
+        height: 18,
+        padding: [0, 2],
+        gap: 2,
+        backgroundColor: C.tileBg,
+        borderRadius: 5
+      }
+    );
+  }
+
   function localCard() {
+    const ipTone = hasIPv4 ? C.subtext : C.red;
+    const ipStatus = (hasIPv4 ? "\u2713" : "\u00d7") + "/" + (hasIPv6 ? "\u2713" : "\u00d7");
+    const ipStatusTone = hasIPv4 && hasIPv6 ? C.green : hasIPv4 ? C.amber : C.red;
+
     return card(
       [
         sectionTitle(
           "wifi",
-          "本地网络",
-          image("globe.asia.australia.fill", C.blue, 12, 12),
+          "\u672c\u5730\u7f51\u7edc",
+          image("globe.asia.australia.fill", C.blue, 11, 11),
           C.blue
         ),
 
+        // The identity block combines SSID, connection state, IP, and location.
+        // This removes the large visual gap between the old profile and metric rows.
         row(
           [
-            iconBox("wifi", C.blue, C.blueSoft, 36),
-
+            iconBox("wifi", C.blue, C.blueSoft, 28),
             col(
               [
                 row(
                   [
-                    text(networkName, 11, "semibold", C.text, {
+                    text(networkName, 8.7, "semibold", C.text, {
                       flex: 1,
                       maxLines: 1,
-                      minScale: 0.68
+                      minScale: 0.62
                     }),
-
-                    pill("已连接", C.green, C.greenSoft, {
-                      padding: [1, 4]
+                    pill("\u5df2\u8fde\u63a5", C.green, C.greenSoft, {
+                      padding: [1, 3]
                     })
                   ],
                   { gap: 3 }
                 ),
-
-                text(displayIP(localIP), 8, "medium", C.subtext, {
-                  maxLines: 1,
-                  minScale: 0.72
-                }),
-
                 row(
                   [
-                    text(flag(localExit.countryCode) || "🇨🇳", 8, "regular", C.text),
-
-                    text(localArea, 7, "medium", C.muted, {
+                    text(displayIP(localIP), 5.9, "medium", ipTone, {
                       maxLines: 1,
-                      minScale: 0.72
+                      minScale: 0.62
+                    }),
+                    text("\u00b7", 5, "medium", C.muted),
+                    text(flag(localExit.countryCode) || "\ud83c\udde8\ud83c\uddf3", 5.5, "regular", C.text),
+                    text(localArea, 5.35, "medium", C.muted, {
+                      flex: 1,
+                      maxLines: 1,
+                      minScale: 0.62
                     })
                   ],
-                  { gap: 2 }
+                  { gap: 1.5 }
                 )
               ],
               {
@@ -1756,43 +1794,25 @@ export default async function (ctx) {
               }
             )
           ],
-          { gap: 8 }
+          {
+            height: 29,
+            gap: 5
+          }
         ),
 
         row(
           [
-            metricBox(
+            compactMetric(
               "router.fill",
-              "网关",
+              "\u7f51\u5173",
               gatewayLabel(displayIP(gateway)),
               C.blue,
-              {
-                valueSize: 5.4,
-                valueMinScale: 0.28
-              }
+              { valueMinScale: 0.28 }
             ),
-
-            metricBox(
-              "network",
-              "IPV4/IPV6",
-              (hasIPv4 ? "✓" : "×") + "/" + (hasIPv6 ? "✓" : "×"),
-              hasIPv4 && hasIPv6
-                ? C.green
-                : hasIPv4
-                  ? C.amber
-                  : C.red
-            ),
-
-            metricBox(
-              "cloud.fill",
-              "DNS",
-              dnsLabel,
-              C.purple,
-              {
-                valueSize: 5.4,
-                valueMinScale: 0.28
-              }
-            )
+            compactMetric("network", "IPv4/IPv6", ipStatus, ipStatusTone),
+            compactMetric("cloud.fill", "DNS", dnsLabel, C.purple, {
+              valueMinScale: 0.3
+            })
           ],
           { gap: 2 }
         ),
@@ -1800,31 +1820,52 @@ export default async function (ctx) {
         delayPillRow(localLatency, localLatencyColor)
       ],
       {
-        flex: 1
+        flex: 1,
+        padding: [5, 6],
+        gap: 3
       }
     );
   }
 
+  // One-line latency strip: the label and result now share the same row so
+  // endpoint diagnostics do not create unnecessary vertical whitespace.
   function delayPillRow(latencyData, tone) {
     const details = (latencyData && latencyData.details) || [];
     if (details.length === 0) {
-      return text("延迟检测失败", 5, "medium", C.red, { maxLines: 1 });
+      return text("\u5ef6\u8fdf\u68c0\u6d4b\u5931\u8d25", 5, "medium", tone || C.red, {
+        maxLines: 1
+      });
     }
-    // vertical mini-pills: label top, ms bottom
-    const pills = details.map(function(d) {
-      const ms = d.ms || 0;
-      const c = ms <= 150 ? C.green : ms <= 300 ? C.amber : C.red;
-      return col([
-        text(d.label, 4.8, "semibold", C.subtext, { maxLines: 1, textAlign: "center" }),
-        text(ms + "ms", 5.5, "bold", c, { maxLines: 1, textAlign: "center" })
-      ], { gap: 0, padding: [1, 2.5], backgroundColor: C.tileBg, borderRadius: 4, alignItems: "center", width: 36 });
-    });
-    // split into sub-rows, max 4 per row
-    var rows = [];
-    for (var i = 0; i < pills.length; i += 4) {
-      rows.push(row(pills.slice(i, i + 4), { gap: 3 }));
-    }
-    return col(rows, { gap: 2 });
+
+    return row(
+      details.slice(0, 4).map(function(d) {
+        const ms = d.ms || 0;
+        const color = ms <= 150 ? C.green : ms <= 300 ? C.amber : C.red;
+        return row(
+          [
+            text(d.label, 4.15, "semibold", C.subtext, {
+              maxLines: 1,
+              minScale: 0.55
+            }),
+            spacer(),
+            text(ms + "ms", 4.85, "bold", color, {
+              maxLines: 1,
+              minScale: 0.52,
+              textAlign: "right"
+            })
+          ],
+          {
+            flex: 1,
+            height: 14,
+            padding: [0, 2],
+            gap: 1,
+            backgroundColor: C.tileBg,
+            borderRadius: 4
+          }
+        );
+      }),
+      { gap: 2 }
+    );
   }
 
   function flagBox() {
@@ -1867,38 +1908,102 @@ export default async function (ctx) {
   }
 
   function proxyCard() {
+    const latencyText = proxyLatency.ok ? proxyLatency.ms + "ms" : "--";
+    const nodeTypeTone = nodeProfile.ip.score > 15 ? C.green : C.amber;
+    const nodeTypeFill = nodeProfile.ip.score > 15 ? C.greenSoft : C.amberSoft;
+
     return card(
       [
         sectionTitle(
           "point.3.connected.trianglepath.dotted",
-          "当前代理",
-          pill(proxyLatency.ok ? "正常" : "异常", proxyLatency.ok ? C.green : C.red, proxyLatency.ok ? C.greenSoft : C.redSoft),
+          "\u5f53\u524d\u4ee3\u7406",
+          pill(
+            proxyLatency.ok ? "\u6b63\u5e38" : "\u5f02\u5e38",
+            proxyLatency.ok ? C.green : C.red,
+            proxyLatency.ok ? C.greenSoft : C.redSoft
+          ),
           C.purple
         ),
 
-        // 城市行
-        row([
-          text(flag(nodeProfile.countryCode) || "🌐", 10, "regular", C.text),
-          text(nodeProfile.city, 10.5, "semibold", C.text, { flex: 1, maxLines: 1, minScale: 0.62 }),
-          text((proxyLatency.ok ? proxyLatency.ms + "ms" : "--") + " · " + NODE_PROTOCOL, 5.8, "medium", proxyLatency.ok ? proxyLatencyColor : C.muted, { maxLines: 1 })
-        ], { gap: 4 }),
+        // Location, latency, ISP, and IP type are consolidated into one compact identity block.
+        row(
+          [
+            row(
+              [
+                text(flag(nodeProfile.countryCode) || "\ud83c\udf10", 13, "regular", C.text, {
+                  maxLines: 1,
+                  textAlign: "center"
+                })
+              ],
+              {
+                width: 28,
+                height: 28,
+                padding: 1,
+                backgroundColor: C.purpleSoft,
+                borderRadius: 9
+              }
+            ),
+            col(
+              [
+                row(
+                  [
+                    text(nodeProfile.city, 8.7, "semibold", C.text, {
+                      flex: 1,
+                      maxLines: 1,
+                      minScale: 0.62
+                    }),
+                    text(latencyText, 6.1, "bold", proxyLatency.ok ? proxyLatencyColor : C.muted, {
+                      maxLines: 1
+                    })
+                  ],
+                  { gap: 3 }
+                ),
+                row(
+                  [
+                    text(shortISP(exit.isp), 5.45, "medium", C.subtext, {
+                      flex: 1,
+                      maxLines: 1,
+                      minScale: 0.58
+                    }),
+                    pill(nodeProfile.typeLabel, nodeTypeTone, nodeTypeFill, {
+                      padding: [1, 3]
+                    })
+                  ],
+                  { gap: 3 }
+                )
+              ],
+              {
+                flex: 1,
+                gap: 1
+              }
+            )
+          ],
+          {
+            height: 29,
+            gap: 5
+          }
+        ),
 
-        // ISP + 类型标签行
-        row([
-          text(shortISP(exit.isp), 7.8, "medium", C.subtext, { flex: 1, maxLines: 1, minScale: 0.62 }),
-          pill(nodeProfile.typeLabel, nodeProfile.ip.score > 15 ? C.green : C.amber, nodeProfile.ip.score > 15 ? C.greenSoft : C.amberSoft, { padding: [2,5] })
-        ], { gap: 6 }),
-
-        // 指标行
-        row([
-          metricBox("circle.hexagongrid.fill", "NAT", nat.label, natColor),
-          metricBox("paperplane.fill", "UDP/QUIC", quic.value, quicColor, { labelSize: 4.25 }),
-          metricBox("slider.horizontal.3", "协议", NODE_PROTOCOL, C.purple, { valueSize: 5.4 })
-        ], { gap: 2 }),
+        row(
+          [
+            compactMetric("circle.hexagongrid.fill", "NAT", nat.label, natColor),
+            compactMetric("paperplane.fill", "UDP/QUIC", quic.value, quicColor, {
+              valueMinScale: 0.3
+            }),
+            compactMetric("slider.horizontal.3", "\u534f\u8bae", NODE_PROTOCOL, C.purple, {
+              valueMinScale: 0.32
+            })
+          ],
+          { gap: 2 }
+        ),
 
         delayPillRow(proxyLatency, proxyLatencyColor)
       ],
-      { flex: 1, padding: [6, 7], gap: 4 }
+      {
+        flex: 1,
+        padding: [5, 6],
+        gap: 3
+      }
     );
   }
   function serviceLogoLarge(item) {
