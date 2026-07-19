@@ -49,7 +49,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.3.6";
+  const VERSION = "1.3.7";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -2350,87 +2350,53 @@ export default async function (ctx) {
     return C.muted;
   }
 
-  function purityFill(tone) {
-    if (tone === "green") return C.greenSoft;
-    if (tone === "amber") return C.amberSoft;
-    if (tone === "red") return C.redSoft;
-    if (tone === "blue") return C.blueSoft;
-    return C.tileBg;
-  }
-
-  function footerStripCell(symbol, label, value, tone, extra) {
+  function footerInlineMetric(symbol, label, value, tone, extra) {
     const color = purityTone(tone);
     const options = extra || {};
     return row(
       [
-        image(symbol, color, options.iconSize || 8, options.iconSize || 8),
-        col(
-          [
-            text(label, options.labelSize || 4.7, "medium", C.muted, {
-              maxLines: 1,
-              minScale: options.labelMinScale || 0.5
-            }),
-            text(value, options.valueSize || 6.15, "semibold", color, {
-              maxLines: 1,
-              minScale: options.valueMinScale || 0.42
-            })
-          ],
-          { flex: 1, gap: 0 }
-        )
+        image(symbol, color, options.iconSize || 7, options.iconSize || 7),
+        text(label, options.labelSize || 4.45, "medium", C.muted, {
+          maxLines: 1,
+          minScale: options.labelMinScale || 0.55
+        }),
+        spacer(),
+        text(value, options.valueSize || 5.45, "semibold", color, {
+          maxLines: 1,
+          minScale: options.valueMinScale || 0.42,
+          textAlign: "right"
+        })
       ],
       Object.assign(
         {
           flex: 1,
-          height: 49,
-          padding: [5, 3],
+          height: 19,
+          padding: [0, 3],
           gap: 2,
-          backgroundColor: options.backgroundColor || C.tileBg,
-          borderRadius: 6
+          backgroundColor: C.tileBg,
+          borderRadius: 5
         },
         options.style || {}
       )
     );
   }
 
-  function footerScoreCell(scoreText, detailText, tone, detailTone) {
-    return col(
-      [
-        row(
-          [
-            image("shield.checkerboard", tone, 9, 9),
-            text(scoreText, 7.1, "semibold", tone, {
-              flex: 1,
-              maxLines: 1,
-              minScale: 0.52
-            })
-          ],
-          { gap: 2, alignItems: "center" }
-        ),
-        text(detailText, 5.2, "medium", detailTone, {
-          maxLines: 1,
-          minScale: 0.48
-        })
-      ],
-      {
-        width: 96,
-        height: 49,
-        padding: [5, 4],
-        gap: 2,
-        backgroundColor: purityFill(purityRating.tone),
-        borderRadius: 6
-      }
-    );
-  }
-
   function footer() {
     const gradeTone = purityTone(purityRating.tone);
+    const gradeFill = purityRating.tone === "green" ? C.greenSoft :
+      purityRating.tone === "amber" ? C.amberSoft :
+      purityRating.tone === "red" ? C.redSoft : C.tileBg;
     const riskTone = purityRating.riskLabel.includes("\u9ad8") ? C.red :
       purityRating.riskLabel.includes("\u4e2d") ? C.amber :
       purityRating.available ? C.green : C.muted;
+    const riskFill = purityRating.riskLabel.includes("\u9ad8") ? C.redSoft :
+      purityRating.riskLabel.includes("\u4e2d") ? C.amberSoft :
+      purityRating.available ? C.greenSoft : C.tileBg;
+    const sourceTone = !purityRating.available ? C.muted : purityRating.estimated ? C.amber : C.blue;
+    const sourceFill = !purityRating.available ? C.tileBg : purityRating.estimated ? C.amberSoft : C.blueSoft;
     const scoreText = purityRating.available
       ? purityRating.gradeLabel + " \u00b7 " + purityRating.score + "\u5206"
-      : "\u7eaf\u51c0\u5ea6\u5f85\u6838\u9a8c";
-    const scoreDetail = purityRating.riskLabel + " \u00b7 " + purityRating.sourceLabel;
+      : "\u5f85\u6838\u9a8c";
     const ippureValue = purityRating.ippureScore === null ? "--" : purityRating.ippureScore + "/100";
     const ippureTone = purityRating.ippureScore === null ? "muted" :
       purityRating.ippureScore >= 80 ? "green" :
@@ -2439,35 +2405,51 @@ export default async function (ctx) {
     const abuserTone = purityRating.abuserLabel === "--" ? "muted" :
       abuserLower.includes("high") ? "red" :
       (abuserLower.includes("elevated") || abuserLower.includes("moderate")) ? "amber" : "green";
-    const location = clean(exit.city) || clean(exit.country) || "\u672a\u77e5\u5730\u533a";
+    const location = clean(exit.city) || clean(exit.country) || "\u672a\u77e5";
     const latency = proxyLatency.ok ? proxyLatency.ms + "ms" : "--";
     const servicePassed = mediaPassed + aiPassed;
+    const headerStatus = row(
+      [
+        pill(scoreText, gradeTone, gradeFill, { padding: [1, 3] }),
+        pill(purityRating.riskLabel, riskTone, riskFill, { padding: [1, 3] }),
+        pill(purityRating.sourceLabel, sourceTone, sourceFill, { padding: [1, 3] })
+      ],
+      { gap: 2, alignItems: "center" }
+    );
 
     return card(
       [
+        sectionTitle(
+          "shield.checkerboard",
+          "IP \u7eaf\u51c0\u5ea6",
+          headerStatus,
+          gradeTone
+        ),
         row(
           [
-            footerScoreCell(scoreText, scoreDetail, gradeTone, riskTone),
-            footerStripCell("checkmark.shield.fill", "IPPure", ippureValue, ippureTone),
-            footerStripCell("building.2.fill", "IP\u5c5e\u6027", purityRating.ipType.label, purityRating.ipType.tone),
-            footerStripCell("exclamationmark.shield.fill", "Abuser", purityRating.abuserLabel, abuserTone),
-            footerStripCell(
+            footerInlineMetric("checkmark.shield.fill", "IPPure", ippureValue, ippureTone, {
+              style: { flex: 0.95 }
+            }),
+            footerInlineMetric("building.2.fill", "\u5c5e\u6027", purityRating.ipType.label, purityRating.ipType.tone),
+            footerInlineMetric("exclamationmark.shield.fill", "Abuser", purityRating.abuserLabel, abuserTone, {
+              style: { flex: 0.95 }
+            }),
+            footerInlineMetric(
               "network",
-              shortISP(exit.isp) + " \u00b7 " + latency,
-              location + " \u00b7 " + servicePassed + "/12",
+              shortISP(exit.isp) + " \u00b7 " + location,
+              latency + " \u00b7 " + servicePassed + "/12",
               "blue",
               {
-                labelMinScale: 0.42,
-                valueMinScale: 0.38,
-                style: { width: 94, flex: 0 },
-                backgroundColor: C.blueSoft
+                labelMinScale: 0.38,
+                valueMinScale: 0.4,
+                style: { flex: 1.35 }
               }
             )
           ],
-          { height: 49, gap: 2, alignItems: "center" }
+          { height: 19, gap: 2, alignItems: "center" }
         )
       ],
-      { height: 59, padding: [5, 5], gap: 0 }
+      { height: 45, padding: [5, 6], gap: 4 }
     );
   }
 
