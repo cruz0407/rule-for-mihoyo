@@ -28,12 +28,9 @@
  */
 
 
-// ── NQR ISP 品质数据库 ─────────────────────────────────────────────
-const ispDB={'HKT':30,'HKBN':30,'PCCW':30,'Netvigator':30,'CMHK':28,'中国移动':28,'NTT':30,'KDDI':30,'SoftBank':30,'Softbank':30,'So-net':28,'SK Broadband':30,'SK Telecom':30,'KT':30,'LG U+':30,'LG Uplus':30,'CHT':28,'Chunghwa':28,'Taiwan Mobile':28,'FarEasTone':28,'SingTel':28,'StarHub':28,'M1':28,'MyRepublic':26,'Telstra':28,'Optus':28,'TPG':28,'Vocus':28,'Deutsche Telekom':28,'Vodafone':28,'BT':28,'Orange':28,'Free':26,'AT&T':28,'Verizon':28,'Comcast':28,'Cox':26,'Spectrum':26,'Cogent':24,'Lumen':24,'GTT':22,'Telia':22,'NTT America':24,'Hurricane Electric':22,'HE':22,'M247':20,'Oracle':12,'Oracle Cloud':12,'OCI':12,'AWS':10,'Amazon':10,'Google Cloud':12,'Google':12,'Microsoft':10,'Azure':10,'Alibaba':10,'阿里云':10,'Tencent':10,'腾讯云':10,'DigitalOcean':14,'Linode':14,'Vultr':14,'Hetzner':14,'OVH':14,'Leaseweb':16,'Eons':18,'GoMami':18,'GoMami Networks':18,'IT7':18,'IT7 Network':18,'DMIT':18,'DMIT Network':18,'Akamai':16,'Cloudflare':14,'Fastly':16,'_default_':18};
-function ispQualityScore(n){var s=String(n||'').trim();if(ispDB[s])return ispDB[s];var l=s.toLowerCase();for(var k in ispDB){if(k==='_default_')continue;if(l.indexOf(k.toLowerCase())>=0)return ispDB[k];}return ispDB['_default_'];}
-
 // ── 模块级测速缓存（Egern JS 上下文在 Widget 刷新间保持） ──────────
 let latencyCache = null;
+let purityCache = null;
 
 export default async function (ctx) {
   const env = ctx.env || {};
@@ -52,7 +49,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.3.1";
+  const VERSION = "1.3.3";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -652,11 +649,23 @@ export default async function (ctx) {
     }
 
     const proxyCheck = await getProxyCheck(merged.ip);
+    let proxyCheckSummary = emptyProxyCheckRisk();
 
     if (proxyCheck && proxyCheck.ip) {
+      proxyCheckSummary = {
+        ok: true,
+        risk: normalizeRiskScore(proxyCheck.flags && proxyCheck.flags.risk),
+        isProxy: Boolean(proxyCheck.flags && proxyCheck.flags.proxy),
+        isVpn: Boolean(proxyCheck.flags && proxyCheck.flags.vpn),
+        isTor: Boolean(proxyCheck.flags && proxyCheck.flags.tor),
+        isAbuser: Boolean(proxyCheck.flags && proxyCheck.flags.abuser),
+        provider: clean(proxyCheck.isp),
+        source: "proxycheck.io"
+      };
       merged = mergeExitSources([merged, proxyCheck]);
     }
 
+    merged.proxyCheck = proxyCheckSummary;
     return merged;
   }
 
@@ -978,7 +987,77 @@ export default async function (ctx) {
     return parseProxyCheck(result.data, target);
   }
 
-  async function getIPApiFull(ip) { try { const res = await ctx.http.get("https://api.ipapi.is/?q=" + encodeURIComponent(ip), requestOptions()); if (res.status >= 200 && res.status < 400) { const j = JSON.parse(await res.text()); const co = j.company || {}, sc = j.security || {}, cn = j.connection || {}; const m = String(co.abuser_score||"").match(/([0-9.]+)s*(([^)]+))/); return { ok:true, abuserScore:m?parseFloat(m[1])||0:0, abuserLevel:m?m[2].trim():"", isDatacenter:!!(sc.is_datacenter||co.is_datacenter), isProxy:!!(sc.is_proxy||sc.proxy), isVpn:!!(sc.is_vpn), isTor:!!(sc.is_tor), isMobile:!!(cn.mobile), isAbuser:!!(sc.is_abuser), companyType:co.type||"", asnName:(j.asn&&j.asn.name)||"" }; } } catch(_){} return { ok:false, abuserScore:0, abuserLevel:"", isDatacenter:false, isProxy:false, isVpn:false, isTor:false, isMobile:false, isAbuser:false, companyType:"", asnName:"" }; }
+  async function getIPApiFull(ip) {
+    const target = clean(ip);
+    try {
+      const query = target ? "?q=" + encodeURIComponent(target) : "";
+      const separator = query ? "&" : "?";
+      const res = await ctx.http.get(
+        "https://api.ipapi.is/" + query + separator + "_=" + Date.now(),
+        requestOptions({ timeout: 4000 })
+      );
+      if (res.status >= 200 && res.status < 400) {
+        const data = JSON.parse(await res.text());
+        const company = data.company || {};
+        const security = data.security || {};
+        const connection = data.connection || {};
+        const parsedAbuser = parseAbuserScore(company.abuser_score);
+        return {
+          ok: true,
+          ip: clean(data.ip || data.query || target),
+          abuserScore: parsedAbuser.percent,
+          abuserLevel: parsedAbuser.level,
+          abuserLabel: parsedAbuser.label,
+          isDatacenter: Boolean(security.is_datacenter || company.is_datacenter),
+          isProxy: Boolean(security.is_proxy || security.proxy),
+          isVpn: Boolean(security.is_vpn || security.vpn),
+          isTor: Boolean(security.is_tor || security.tor),
+          isMobile: Boolean(connection.mobile || connection.is_mobile),
+          isAbuser: Boolean(security.is_abuser),
+          companyType: clean(company.type),
+          companyName: clean(company.name),
+          asnName: clean(data.asn && data.asn.name)
+        };
+      }
+    } catch (_) {}
+    return emptyIPApiRisk();
+  }
+
+  async function getIPPureInfo() {
+    const cacheKey = POLICY || "__default__";
+    const nowValue = Date.now();
+    if (purityCache && purityCache.key === cacheKey && purityCache.expiresAt > nowValue && purityCache.data) {
+      return Object.assign({}, purityCache.data, { cached: true });
+    }
+
+    try {
+      const res = await ctx.http.get(
+        "https://my.ippure.com/v1/info?_=" + nowValue,
+        requestOptions({ timeout: 3500 })
+      );
+      if (res.status >= 200 && res.status < 400) {
+        const data = JSON.parse(await res.text());
+        const risk = normalizeRiskScore(data.fraudScore);
+        const result = {
+          ok: risk !== null,
+          ip: clean(data.ip),
+          risk: risk,
+          purity: risk === null ? null : Math.round(100 - risk),
+          residential: typeof data.isResidential === "boolean" ? data.isResidential : null,
+          country: clean(data.country),
+          countryCode: countryCode(data.countryCode),
+          city: clean(data.city),
+          cached: false,
+          mismatch: false
+        };
+        if (result.ok) {
+          purityCache = { key: cacheKey, expiresAt: nowValue + 10 * 60 * 1000, data: result };
+        }
+        return result;
+      }
+    } catch (_) {}
+    return emptyIPPureRisk();
+  }
 
   // ── ipapi.co ISP  // ── ipapi.co ISP 查询（B 文件验证此源最准） ──────────────────────────
   async function getIPApiCoOrg(ip) {
@@ -1242,6 +1321,7 @@ export default async function (ctx) {
     localLatency,
     quic,
     apiFullData,
+    ippureData,
     media,
     ai
   ] = await Promise.all([
@@ -1252,6 +1332,7 @@ export default async function (ctx) {
     getLocalLatency(),
     getQuic(),
     getIPApiFull(""),
+    getIPPureInfo(),
 
     Promise.all([
       testService("netflix", "Netflix", "netflix", C.netflix, "", mediaPolicyMap.netflix),
@@ -1281,8 +1362,32 @@ export default async function (ctx) {
   }
 
   // ── 修正 apiFullData 的 IP ────────────────────────────────────────────
-  if (exit.ip && exit.ip !== "未识别" && !apiFullData.ok) {
+  if (
+    exit.ip &&
+    exit.ip !== "\u672a\u8bc6\u522b" &&
+    (!apiFullData.ok || (apiFullData.ip && apiFullData.ip !== exit.ip))
+  ) {
     apiFullData = await getIPApiFull(exit.ip);
+  }
+
+  if (
+    ippureData.ok &&
+    ippureData.ip &&
+    exit.ip &&
+    exit.ip !== "\u672a\u8bc6\u522b" &&
+    ippureData.ip.includes(":") === exit.ip.includes(":") &&
+    ippureData.ip !== exit.ip
+  ) {
+    purityCache = null;
+    ippureData = await getIPPureInfo();
+    if (
+      ippureData.ok &&
+      ippureData.ip &&
+      ippureData.ip.includes(":") === exit.ip.includes(":") &&
+      ippureData.ip !== exit.ip
+    ) {
+      ippureData = Object.assign({}, ippureData, { ok: false, mismatch: true });
+    }
   }
 
   const carrierByDirectISP = carrierFromISP(
@@ -1312,19 +1417,22 @@ export default async function (ctx) {
 
   const dns = chooseDNSProvider(baseDNS, verifiedDNS);
   const dnsLabel = dnsTinyLabel(dns.short || dns.full);
-  const localArea = localExit.label || "中国大陆";
-  function nodeQualityRating(exit, af, pLat, qc, v6, dnsOk, natOk, mediaOk, aiOk) { var f=af||{}, ok=f.ok||false; var ispS=ispQualityScore(exit.isp), ispM=30; var ipS=12; if(f.isTor)ipS=0;else if(f.isVpn)ipS=6;else if(f.isProxy)ipS=10; else if(f.isDatacenter)ipS=10;else if(f.isMobile||exit.kind==="移动网络")ipS=23; else if(exit.kind==="住宅 IP"||(exit.flags||{}).residential)ipS=25; else if(exit.kind==="商业机房")ipS=10; var rsS=16,ipM=25; if(ok&&f.abuserScore>0){if(f.abuserScore>=60)rsS=5;else if(f.abuserScore>=40)rsS=10;else if(f.abuserScore>=20)rsS=14;else if(f.abuserScore>=5)rsS=16;else rsS=18;} if(ok&&f.isAbuser)rsS=Math.max(0,rsS-8); var ntS=0,rsM=20; if(pLat&&pLat.ok){if(pLat.ms<=50)ntS+=8;else if(pLat.ms<=100)ntS+=7;else if(pLat.ms<=200)ntS+=5;else ntS+=3;} if(qc&&qc.value&&qc.value!=="❌")ntS+=2;if(v6)ntS+=2;if(dnsOk)ntS+=1;if(natOk)ntS+=1;if(qc&&qc.tone==="green")ntS+=1; var svS=Math.min(10,Math.round((mediaOk+aiOk)/12*10)),ntM=15,svM=10; var tot=Math.round(ispS+ipS+rsS+Math.min(ntS,ntM)+Math.min(svS,svM)); tot=Math.max(10,Math.min(100,tot)); return{total:tot,grade:tot>=90?"A+":tot>=80?"A":tot>=70?"B":tot>=55?"C":"D", isp:{score:ispS,max:ispM,name:shortISP(exit.isp)},ip:{score:ipS,max:ipM}, risk:{score:rsS,max:rsM},network:{score:Math.min(ntS,ntM),max:ntM}, service:{score:Math.min(svS,svM),max:svM}}; }
-
+  const localArea = localExit.label || "\u4e2d\u56fd\u5927\u9646";
   const nat = detectNAT(localIP, exit.ip);
-  const mediaPassed = media.filter(function(m){return m.ok;}).length;
-  const aiPassed = ai.filter(function(a){return a.ok;}).length;
-  const purity = purityScore(exit, apiFullData);
-  const risk = riskLevel(exit, purity, apiFullData);
-  const nqr = nodeQualityRating(exit, apiFullData, proxyLatency, quic, hasIPv6, dnsLabel!=="未知", nat.label==="Open", mediaPassed, aiPassed);
-  const nodeProfile = { isp: nqr.isp.name, score: nqr.total, grade: nqr.grade, risk: risk, ispScore: nqr.isp.score, type: exit.kind || "未知", typeLabel: exit.flags?.residential ? "🏠 住宅" : exit.kind === "移动网络" ? "📱 移动" : exit.kind === "商业机房" ? "🏢 机房" : "🌐 未知", countryCode: exit.countryCode || "", city: clean(exit.city) || clean(exit.country) || "未知地区", service: nqr.service, network: nqr.network, ip: nqr.ip };
-  const nodeRank = rankNode(nodeProfile, apiFullData, proxyLatency, quic, hasIPv6, nat.label==="Open", mediaPassed, aiPassed);
-
-
+  const mediaPassed = media.filter(function(item) { return item.ok; }).length;
+  const aiPassed = ai.filter(function(item) { return item.ok; }).length;
+  const purityRating = calculatePurityRating(
+    ippureData,
+    apiFullData,
+    exit.proxyCheck || emptyProxyCheckRisk(),
+    exit
+  );
+  const nodeProfile = {
+    countryCode: exit.countryCode || "",
+    city: clean(exit.city) || clean(exit.country) || "\u672a\u77e5\u5730\u533a",
+    typeLabel: purityRating.ipType.compactLabel,
+    typeTone: purityRating.ipType.tone
+  };
 
   const proxyLatencyColor = proxyLatency.ok
     ? proxyLatency.ms <= 220 ? C.green : C.amber
@@ -1336,16 +1444,6 @@ export default async function (ctx) {
 
   const natColor = toneColor(nat.tone, C);
   const quicColor = toneColor(quic.tone, C);
-
-  const purityColor =
-    purity.score >= 75 ? C.green :
-    purity.score >= 45 ? C.amber :
-    C.red;
-
-  const riskColor =
-    risk === "低风险" ? C.green :
-    risk === "中风险" ? C.amber :
-    C.red;
 
   function merge(base, extra) {
     return scaleStyle(Object.assign({}, base || {}, extra || {}));
@@ -1821,14 +1919,15 @@ export default async function (ctx) {
       ],
       {
         flex: 1,
+        height: 98,
         padding: [5, 6],
-        gap: 3
+        gap: 3,
+        justifyContent: "flex-start"
       }
     );
   }
 
-  // One-line latency strip: the label and result now share the same row so
-  // endpoint diagnostics do not create unnecessary vertical whitespace.
+  // Compact vertical latency pills: endpoint on top, milliseconds below.
   function delayPillRow(latencyData, tone) {
     const details = (latencyData && latencyData.details) || [];
     if (details.length === 0) {
@@ -1841,76 +1940,45 @@ export default async function (ctx) {
       details.slice(0, 4).map(function(d) {
         const ms = d.ms || 0;
         const color = ms <= 150 ? C.green : ms <= 300 ? C.amber : C.red;
-        return row(
+        return col(
           [
-            text(d.label, 4.15, "semibold", C.subtext, {
+            text(d.label, 4.05, "semibold", C.subtext, {
               maxLines: 1,
-              minScale: 0.55
+              minScale: 0.55,
+              textAlign: "center"
             }),
-            spacer(),
-            text(ms + "ms", 4.85, "bold", color, {
+            text(ms + "ms", 4.9, "bold", color, {
               maxLines: 1,
               minScale: 0.52,
-              textAlign: "right"
+              textAlign: "center"
             })
           ],
           {
             flex: 1,
-            height: 14,
+            height: 18,
             padding: [0, 2],
-            gap: 1,
+            gap: 0,
+            alignItems: "center",
             backgroundColor: C.tileBg,
             borderRadius: 4
           }
         );
       }),
-      { gap: 2 }
-    );
-  }
-
-  function flagBox() {
-    return row(
-      [
-        text(flag(exit.countryCode) || "🌐", 22, "regular", C.text, {
-          maxLines: 1,
-          textAlign: "center"
-        })
-      ],
       {
-        width: 36,
-        height: 36,
-        padding: 2,
-        backgroundColor: C.purpleSoft,
-        borderRadius: 11
-      }
-    );
-  }
-
-  function scoreGauge() {
-    return svgImage(
-      purityGaugeSVG(
-        purity.score,
-        {
-          track: uiColor(C.scoreTrack),
-          left: uiColor(C.scoreLeft),
-          right: uiColor(C.scoreRight),
-          glow: uiColor(C.scoreGlow),
-          text: uiColor(C.scoreLeft),
-          muted: uiColor(C.muted)
-        }
-      ),
-      68,
-      52,
-      {
-        borderRadius: 16
+        height: 18,
+        gap: 2
       }
     );
   }
 
   function proxyCard() {
     const latencyText = proxyLatency.ok ? proxyLatency.ms + "ms" : "--";
-    const nodeTypeTone = nodeProfile.ip.score > 15 ? C.green : C.amber;
-    const nodeTypeFill = nodeProfile.ip.score > 15 ? C.greenSoft : C.amberSoft;
+    const nodeTypeTone = nodeProfile.typeTone === "green" ? C.green :
+      nodeProfile.typeTone === "blue" ? C.blue :
+      nodeProfile.typeTone === "amber" ? C.amber : C.muted;
+    const nodeTypeFill = nodeProfile.typeTone === "green" ? C.greenSoft :
+      nodeProfile.typeTone === "blue" ? C.blueSoft :
+      nodeProfile.typeTone === "amber" ? C.amberSoft : C.tileBg;
 
     return card(
       [
@@ -2001,8 +2069,10 @@ export default async function (ctx) {
       ],
       {
         flex: 1,
+        height: 98,
         padding: [5, 6],
-        gap: 3
+        gap: 3,
+        justifyContent: "flex-start"
       }
     );
   }
@@ -2250,92 +2320,115 @@ export default async function (ctx) {
     );
   }
 
-  function footerCell(symbol, label, value, tone) {
-    return col(
+  function purityTone(tone) {
+    if (tone === "green") return C.green;
+    if (tone === "amber") return C.amber;
+    if (tone === "red") return C.red;
+    if (tone === "blue") return C.blue;
+    return C.muted;
+  }
+
+  function purityFill(tone) {
+    if (tone === "green") return C.greenSoft;
+    if (tone === "amber") return C.amberSoft;
+    if (tone === "red") return C.redSoft;
+    if (tone === "blue") return C.blueSoft;
+    return C.tileBg;
+  }
+
+  function purityMetric(symbol, label, value, tone) {
+    const color = purityTone(tone);
+    return row(
       [
-        row(
+        image(symbol, color, 7, 7),
+        col(
           [
-            image(symbol, tone, 13, 13),
-
-            col(
-              [
-                text(label, 6, "medium", C.muted, {
-                  maxLines: 1
-                }),
-
-                text(value, 7, "semibold", tone, {
-                  maxLines: 1,
-                  minScale: 0.64
-                })
-              ],
-              {
-                flex: 1,
-                gap: 0
-              }
-            )
+            text(label, 4.15, "medium", C.muted, { maxLines: 1, minScale: 0.65 }),
+            text(value, 5.35, "semibold", color, { maxLines: 1, minScale: 0.48 })
           ],
-          {
-            gap: 4
-          }
+          { flex: 1, gap: 0 }
         )
       ],
       {
         flex: 1,
-        padding: [1, 3]
+        height: 19,
+        padding: [0, 2],
+        gap: 2,
+        backgroundColor: C.tileBg,
+        borderRadius: 5
       }
     );
   }
 
-  // 统一节点评级：五维加权 + 扣分原因记录
-  function rankNode(np, af, pLat, qc, v6, natOk, mediaOk, aiOk) {
-    var f=af||{}, reasons=[], total=100;
-    // ISP品质 (25分)
-    var ispS=np.ispScore||15; if(ispS<15){total-=10;reasons.push("ISP-"+ (15-ispS));}
-    // IP属性 (20分)
-    if(f.isTor){total-=20;reasons.push("Tor -20");}
-    else if(f.isVpn){total-=14;reasons.push("VPN -14");}
-    else if(f.isProxy||f.isDatacenter){total-=8;reasons.push("数据中心 -8");}
-    else if(f.isMobile){total-=0;}
-    else{total-=4;}
-    // 信誉 (15分)
-    if(f.ok&&f.abuserScore>0){if(f.abuserScore>=60){total-=15;reasons.push("滥用高风险 -15");}
-      else if(f.abuserScore>=40){total-=10;reasons.push("滥用中风险 -10");}
-      else if(f.abuserScore>=20){total-=5;reasons.push("滥分偏高 -5");}}
-    if(f.ok&&f.isAbuser){total-=5;reasons.push("标记滥用 -5");}
-    // 网络质量 (25分)
-    var netS=0;
-    if(pLat&&pLat.ok){if(pLat.ms<=50)netS=12;else if(pLat.ms<=100)netS=10;else if(pLat.ms<=200)netS=7;else if(pLat.ms<=400)netS=4;else netS=2;}
-    if(qc&&qc.value&&qc.value!=="❌")netS+=3;if(v6)netS+=3;if(natOk)netS+=2;
-    if(netS<15){total-=(15-netS);reasons.push("网络扣"+ (15-netS));}
-    // 服务 (15分)
-    var svcAll=mediaOk+aiOk;
-    if(svcAll<6){total-=8;reasons.push("解锁不足");}else if(svcAll<10){total-=3;}
-    // 延迟优异加分
-    if(pLat&&pLat.ok&&pLat.ms<=60&&total<95){total+=3;reasons.push("延迟优秀 +3");}
-    total=Math.max(10,Math.min(100,total));
-    var grade=total>=90?"S级":total>=75?"A级":total>=60?"B级":"C级";
-    var riskLabel=total>=75?"低风险":total>=55?"中风险":"高风险";
-    return {total:total,grade:grade,reasons:reasons,risk:riskLabel};
-  }
-
   function footer() {
-    var rc=nodeRank.reasons.length>0?nodeRank.reasons.slice(0,3).join(" · "):"无扣分项";
-    var avgSvc=Math.round((mediaPassed+aiPassed)/12*10);
+    const gradeTone = purityTone(purityRating.tone);
+    const riskTone = purityRating.riskLabel.includes("\u9ad8") ? C.red :
+      purityRating.riskLabel.includes("\u4e2d") ? C.amber :
+      purityRating.available ? C.green : C.muted;
+    const riskFill = purityRating.riskLabel.includes("\u9ad8") ? C.redSoft :
+      purityRating.riskLabel.includes("\u4e2d") ? C.amberSoft :
+      purityRating.available ? C.greenSoft : C.tileBg;
+    const scoreText = purityRating.available
+      ? purityRating.gradeLabel + " \u00b7 " + purityRating.score + "\u5206"
+      : "\u7eaf\u51c0\u5ea6\u5f85\u6838\u9a8c";
+    const ippureValue = purityRating.ippureScore === null ? "--" : purityRating.ippureScore + "/100";
+    const ippureTone = purityRating.ippureScore === null ? "muted" :
+      purityRating.ippureScore >= 80 ? "green" :
+      purityRating.ippureScore >= 50 ? "amber" : "red";
+    const abuserLower = clean(purityRating.abuserLabel).toLowerCase();
+    const abuserTone = purityRating.abuserLabel === "--" ? "muted" :
+      abuserLower.includes("high") ? "red" :
+      (abuserLower.includes("elevated") || abuserLower.includes("moderate")) ? "amber" : "green";
+    const sourceTone = !purityRating.available ? C.muted : purityRating.estimated ? C.amber : C.blue;
+    const sourceFill = !purityRating.available ? C.tileBg : purityRating.estimated ? C.amberSoft : C.blueSoft;
+    const location = clean(exit.city) || clean(exit.country) || "\u672a\u77e5\u5730\u533a";
+    const latency = proxyLatency.ok ? proxyLatency.ms + "ms" : "--";
+    const summary = shortISP(exit.isp) + " \u00b7 " + location + " \u00b7 " + latency;
+
     return card(
       [
-        row([
-          text("🌟 "+nodeRank.grade+" · "+nodeRank.total+"分", 7.5, "semibold", nodeRank.total>=80?C.green:nodeRank.total>=55?C.amber:C.red, { flex:1, maxLines:1 }),
-          text("📋 "+rc, 5.5, "medium", C.muted, { flex:1, maxLines:1, textAlign:"right" })
-        ],{height:14,padding:[0,0],gap:4,alignItems:"center"}),
-        row([
-          text("🛡 "+nodeRank.risk+" · "+shortISP(exit.isp), 5.5, "medium", C.subtext, { flex:1, maxLines:1 }),
-          text("✅ 服务 "+mediaPassed+"/6 ▶️" + " · "+aiPassed+"/6 🤖", 5.5, "medium", C.subtext, { maxLines:1, textAlign:"right" })
-        ],{height:12,padding:[0,0],gap:4,alignItems:"center"})
+        row(
+          [
+            image("shield.checkerboard", gradeTone, 9, 9),
+            text(scoreText, 7.5, "semibold", gradeTone, { flex: 1, maxLines: 1, minScale: 0.72 }),
+            pill(purityRating.riskLabel, riskTone, riskFill, { padding: [1, 3] }),
+            pill(
+              purityRating.sourceLabel,
+              sourceTone,
+              sourceFill,
+              { padding: [1, 3] }
+            )
+          ],
+          { height: 14, gap: 3, alignItems: "center" }
+        ),
+        row(
+          [
+            purityMetric("checkmark.shield.fill", "IPPure", ippureValue, ippureTone),
+            purityMetric("building.2.fill", "IP\u5c5e\u6027", purityRating.ipType.label, purityRating.ipType.tone),
+            purityMetric(
+              "exclamationmark.shield.fill",
+              "Abuser",
+              purityRating.abuserLabel,
+              abuserTone
+            )
+          ],
+          { height: 19, gap: 2 }
+        ),
+        row(
+          [
+            text(summary, 5.25, "medium", C.subtext, { flex: 1, maxLines: 1, minScale: 0.52 }),
+            text("\u5a92\u4f53 " + mediaPassed + "/6 \u00b7 AI " + aiPassed + "/6", 5.25, "medium", C.subtext, {
+              maxLines: 1,
+              minScale: 0.62,
+              textAlign: "right"
+            })
+          ],
+          { height: 11, gap: 4, alignItems: "center" }
+        )
       ],
-      { padding:[4,5],gap:2 }
+      { height: 58, padding: [4, 5], gap: 3 }
     );
   }
-
 
   const dashboard = col(
     [
@@ -2347,6 +2440,7 @@ export default async function (ctx) {
           proxyCard()
         ],
         {
+          height: 98,
           gap: 6,
           alignItems: "start"
         }
@@ -4373,53 +4467,244 @@ function dnsTinyLabel(value) {
   return "未知";
 }
 
-function purityScore(exit, apiFullData) {
-  const flags = (exit && exit.flags) || {};
-  const evidence = flags.evidence || {};
-  const kind = clean(exit && exit.kind);
-  const abuserOk = apiFullData && apiFullData.ok;
-  const abuserLevel = abuserOk ? apiFullData.level : '';
-  const abuserScore = abuserOk ? apiFullData.score : 0;
-
-  let score = 60;
-  if (flags.residential || kind === '住宅 IP') score = 92;
-  else if (kind === '移动网络') score = 88;
-  else if (kind === '商业机房') score = 68;
-
-  if (abuserOk && abuserLevel) {
-    const lv = abuserLevel.toLowerCase();
-    if (lv.includes('very high') || lv.includes('extremely high')) score -= 32;
-    else if (lv.includes('high')) score -= 20;
-    else if (lv.includes('elevated') || lv.includes('moderate')) score -= 10;
-    else if (lv.includes('low')) score -= 3;
-  }
-
-  const proxyCount = Number(evidence.proxyCount || 0);
-  const vpnCount = Number(evidence.vpnCount || 0);
-  const torCount = Number(evidence.torCount || 0);
-  const abuserCount = Number(evidence.abuserCount || 0);
-  const proxyVpnEvidenceCount = proxyCount + vpnCount;
-  if (torCount > 0 || flags.tor) score -= 50;
-  if (abuserCount > 0 || flags.abuser) score -= 30;
-  if (proxyVpnEvidenceCount >= 2) score -= 20;
-  else if (proxyVpnEvidenceCount === 1) score -= 15;
-
-  if (flags.residential && !flags.proxy && !flags.vpn && !flags.tor && score < 90) score += 3;
-
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  return { score: score, risk: 100 - score, evidence: evidence, _ipapiAbuser: { ok: abuserOk, score: abuserScore, level: abuserLevel } };
+function normalizeRiskScore(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(100, number));
 }
 
-function riskLevel(exit, purity, apiFullData) {
+function parseAbuserScore(value) {
+  const text = clean(value);
+  if (!text) return { percent: null, level: "", label: "" };
+  const numberMatch = text.match(/([0-9]+(?:\.[0-9]+)?)/);
+  let percent = numberMatch ? Number(numberMatch[1]) : null;
+  if (Number.isFinite(percent) && percent <= 1) percent *= 100;
+  percent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null;
+  const levelMatch = text.match(/\(([^)]+)\)/);
+  const knownLevel = text.match(/(extremely high|very high|elevated|moderate|very low|high|low)/i);
+  const level = clean((levelMatch && levelMatch[1]) || (knownLevel && knownLevel[1]));
+  return {
+    percent: percent,
+    level: level,
+    label: level || (percent === null ? "" : Math.round(percent) + "%")
+  };
+}
+
+function emptyIPApiRisk() {
+  return {
+    ok: false,
+    ip: "",
+    abuserScore: null,
+    abuserLevel: "",
+    abuserLabel: "",
+    isDatacenter: false,
+    isProxy: false,
+    isVpn: false,
+    isTor: false,
+    isMobile: false,
+    isAbuser: false,
+    companyType: "",
+    companyName: "",
+    asnName: ""
+  };
+}
+
+function emptyIPPureRisk() {
+  return {
+    ok: false,
+    ip: "",
+    risk: null,
+    purity: null,
+    residential: null,
+    country: "",
+    countryCode: "",
+    city: "",
+    cached: false,
+    mismatch: false
+  };
+}
+
+function emptyProxyCheckRisk() {
+  return {
+    ok: false,
+    risk: null,
+    isProxy: false,
+    isVpn: false,
+    isTor: false,
+    isAbuser: false,
+    provider: "",
+    source: "proxycheck.io"
+  };
+}
+
+function resolvePurityIPType(ippure, ipapi, exit) {
+  const pure = ippure || emptyIPPureRisk();
+  const api = ipapi || emptyIPApiRisk();
   const flags = (exit && exit.flags) || {};
-  const evidence = flags.evidence || {};
-  const score = Number(purity && purity.score);
-  const abuserOk = apiFullData && apiFullData.ok;
-  const abuserLevel = abuserOk ? apiFullData.level : '';
-  const proxyVpnEvidenceCount = Number(evidence.proxyCount || 0) + Number(evidence.vpnCount || 0);
-  if (flags.tor || Number(evidence.torCount || 0) > 0 || flags.abuser || Number(evidence.abuserCount || 0) > 0 || (abuserLevel && (abuserLevel.includes('Very High') || abuserLevel.includes('High'))) || score < 40) return '高风险';
-  if (score < 70 || flags.datacenter || flags.hosting || flags.cloud || (abuserLevel && abuserLevel.includes('Elevated')) || proxyVpnEvidenceCount > 0) return '中风险';
-  return '低风险';
+  const kind = clean(exit && exit.kind);
+
+  if (pure.ok && pure.residential === true) {
+    return { type: "residential", label: "\u4f4f\u5b85IP", compactLabel: "\ud83c\udfe0 \u4f4f\u5b85", tone: "green", source: "IPPure" };
+  }
+  if (api.isMobile || flags.mobile || kind === "\u79fb\u52a8\u7f51\u7edc") {
+    return { type: "mobile", label: "\u79fb\u52a8\u7f51\u7edc", compactLabel: "\ud83d\udcf1 \u79fb\u52a8", tone: "blue", source: api.isMobile ? "ipapi.is" : "multi" };
+  }
+  if (api.isDatacenter || flags.datacenter || flags.hosting || flags.cloud || kind === "\u5546\u4e1a\u673a\u623f") {
+    return { type: "datacenter", label: "\u5546\u4e1a\u673a\u623f", compactLabel: "\ud83c\udfe2 \u673a\u623f", tone: "amber", source: api.isDatacenter ? "ipapi.is" : "multi" };
+  }
+  if (pure.ok && pure.residential === false) {
+    return { type: "non_residential", label: "\u975e\u4f4f\u5b85IP", compactLabel: "\ud83c\udfe2 \u975e\u4f4f\u5b85", tone: "amber", source: "IPPure" };
+  }
+  if (flags.residential || kind === "\u4f4f\u5b85 IP") {
+    return { type: "residential", label: "\u4f4f\u5b85IP", compactLabel: "\ud83c\udfe0 \u4f4f\u5b85", tone: "green", source: "multi" };
+  }
+  return { type: "unknown", label: "\u672a\u77e5\u5c5e\u6027", compactLabel: "\ud83c\udf10 \u672a\u77e5", tone: "muted", source: "" };
+}
+
+function purityGradeInfo(score) {
+  if (score === null || score === undefined) return { grade: "", label: "\u5f85\u6838\u9a8c" };
+  if (score >= 90) return { grade: "S", label: "S\u7ea7" };
+  if (score >= 80) return { grade: "A", label: "A\u7ea7" };
+  if (score >= 65) return { grade: "B", label: "B\u7ea7" };
+  if (score >= 50) return { grade: "C", label: "C\u7ea7" };
+  return { grade: "D", label: "D\u7ea7" };
+}
+
+function calculatePurityRating(ippureData, ipapiData, proxyData, exit) {
+  const ippure = Object.assign(emptyIPPureRisk(), ippureData || {});
+  const ipapi = Object.assign(emptyIPApiRisk(), ipapiData || {});
+  const proxycheck = Object.assign(emptyProxyCheckRisk(), proxyData || {});
+  const exitFlags = (exit && exit.flags) || {};
+  const reasons = [];
+  const sourceCount = [ippure.ok, ipapi.ok, proxycheck.ok].filter(Boolean).length;
+  const ipType = resolvePurityIPType(ippure, ipapi, exit);
+  const ippureRisk = ippure.ok ? normalizeRiskScore(ippure.risk) : null;
+  const ipapiRisk = ipapi.ok ? normalizeRiskScore(ipapi.abuserScore) : null;
+  const proxyRisk = proxycheck.ok ? normalizeRiskScore(proxycheck.risk) : null;
+  let estimated = false;
+  let score = ippureRisk === null ? null : 100 - ippureRisk;
+
+  if (score === null) {
+    const fallback = [];
+    if (ipapiRisk !== null) fallback.push({ risk: ipapiRisk, weight: 0.4 });
+    if (proxyRisk !== null) fallback.push({ risk: proxyRisk, weight: 0.6 });
+    if (fallback.length > 0) {
+      const totalWeight = fallback.reduce(function(sum, item) { return sum + item.weight; }, 0);
+      const weightedRisk = fallback.reduce(function(sum, item) { return sum + item.risk * item.weight; }, 0) / totalWeight;
+      score = 100 - weightedRisk;
+      estimated = true;
+      if (fallback.length === 1) score = Math.min(score, 85);
+    }
+  }
+
+  if (score === null) {
+    return {
+      available: false,
+      estimated: false,
+      score: null,
+      grade: "",
+      gradeLabel: "\u5f85\u6838\u9a8c",
+      riskLabel: "\u6570\u636e\u4e0d\u8db3",
+      tone: "muted",
+      confidence: "none",
+      sourceCount: sourceCount,
+      sourceLabel: "\u5f85\u6838\u9a8c",
+      ipType: ipType,
+      abuserLabel: "--",
+      ippureScore: null,
+      reasons: [],
+      raw: { ippureRisk: ippureRisk, ipapiAbuser: ipapiRisk, proxycheckRisk: proxyRisk }
+    };
+  }
+
+  function deduct(points, code, label, source, severity) {
+    if (!(points > 0)) return;
+    score -= points;
+    reasons.push({ code: code, label: label, source: source, impact: -points, severity: severity || 1 });
+  }
+
+  function capScore(limit, code, label, source, severity) {
+    if (score <= limit) return;
+    const impact = Math.round(score - limit);
+    score = limit;
+    reasons.push({ code: code, label: label, source: source, impact: -impact, cap: limit, severity: severity || 2 });
+  }
+
+  if (!estimated && ipapi.ok) {
+    const level = clean(ipapi.abuserLevel).toLowerCase();
+    if ((ipapiRisk !== null && ipapiRisk >= 70) || level.includes("very high") || level.includes("extremely high")) {
+      deduct(25, "IPAPI_ABUSER_VERY_HIGH", "Abuser Very High", "ipapi.is", 3);
+    } else if ((ipapiRisk !== null && ipapiRisk >= 40) || level === "high" || level.endsWith(" high")) {
+      deduct(15, "IPAPI_ABUSER_HIGH", "Abuser High", "ipapi.is", 3);
+    } else if ((ipapiRisk !== null && ipapiRisk >= 20) || level.includes("elevated") || level.includes("moderate")) {
+      deduct(5, "IPAPI_ABUSER_ELEVATED", "Abuser Elevated", "ipapi.is", 2);
+    }
+  }
+
+  if (!estimated && proxyRisk !== null) {
+    if (proxyRisk >= 80) deduct(20, "PROXYCHECK_RISK_VERY_HIGH", "Proxy Risk " + Math.round(proxyRisk), "proxycheck.io", 3);
+    else if (proxyRisk >= 60) deduct(12, "PROXYCHECK_RISK_HIGH", "Proxy Risk " + Math.round(proxyRisk), "proxycheck.io", 2);
+    else if (proxyRisk >= 40) deduct(5, "PROXYCHECK_RISK_MEDIUM", "Proxy Risk " + Math.round(proxyRisk), "proxycheck.io", 1);
+  }
+
+  const ipapiProxyVpn = Boolean(ipapi.isProxy || ipapi.isVpn);
+  const proxycheckProxyVpn = Boolean(proxycheck.isProxy || proxycheck.isVpn);
+  const aggregateProxyVpn = Boolean(exitFlags.proxy || exitFlags.vpn);
+  let proxyVpnHits = Number(ipapiProxyVpn) + Number(proxycheckProxyVpn);
+  if (proxyVpnHits === 0 && aggregateProxyVpn) proxyVpnHits = 1;
+  if (proxyVpnHits >= 2) capScore(50, "PROXY_VPN_MULTI_SOURCE", "Proxy/VPN \u591a\u6e90\u547d\u4e2d", "multi", 3);
+  else if (proxyVpnHits === 1) capScore(65, "PROXY_VPN_SINGLE_SOURCE", "Proxy/VPN \u6807\u8bb0", ipapiProxyVpn ? "ipapi.is" : proxycheckProxyVpn ? "proxycheck.io" : "multi", 2);
+
+  const hasAbuser = Boolean(ipapi.isAbuser || proxycheck.isAbuser || exitFlags.abuser);
+  const hasTor = Boolean(ipapi.isTor || proxycheck.isTor || exitFlags.tor);
+  if (hasAbuser) {
+    capScore(25, "ABUSER_CONFIRMED", "Abuser \u660e\u786e\u547d\u4e2d", ipapi.isAbuser ? "ipapi.is" : proxycheck.isAbuser ? "proxycheck.io" : "multi", 4);
+  }
+  if (hasTor) {
+    capScore(10, "TOR_CONFIRMED", "Tor \u51fa\u53e3", ipapi.isTor ? "ipapi.is" : proxycheck.isTor ? "proxycheck.io" : "multi", 4);
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  reasons.sort(function(a, b) {
+    return (b.severity - a.severity) || (Math.abs(b.impact) - Math.abs(a.impact));
+  });
+
+  const grade = purityGradeInfo(score);
+  let riskLabel = "\u6781\u4f4e\u98ce\u9669";
+  if (hasTor) riskLabel = "\u6781\u9ad8\u98ce\u9669";
+  else if (hasAbuser || score < 35) riskLabel = "\u9ad8\u98ce\u9669";
+  else if (score < 65) riskLabel = "\u4e2d\u7b49\u98ce\u9669";
+  else if (score < 80) riskLabel = "\u4e2d\u4f4e\u98ce\u9669";
+  else if (score < 90) riskLabel = "\u4f4e\u98ce\u9669";
+
+  const tone = score >= 80 ? "green" : score >= 50 ? "amber" : "red";
+  let confidence = "low";
+  if (sourceCount >= 3 && ippure.ok) confidence = "high";
+  else if (sourceCount >= 2) confidence = "medium";
+  const sourceLabel = ippure.ok
+    ? sourceCount >= 2 ? sourceCount + "\u6e90" : "IPPure"
+    : "\u4f30\u7b97\u00b7" + sourceCount + "\u6e90";
+  const abuserLabel = clean(ipapi.abuserLabel || ipapi.abuserLevel) ||
+    (ipapiRisk === null ? "--" : Math.round(ipapiRisk) + "%");
+
+  return {
+    available: true,
+    estimated: estimated,
+    score: score,
+    grade: grade.grade,
+    gradeLabel: grade.label,
+    riskLabel: riskLabel,
+    tone: tone,
+    confidence: confidence,
+    sourceCount: sourceCount,
+    sourceLabel: sourceLabel,
+    ipType: ipType,
+    abuserLabel: abuserLabel,
+    ippureScore: ippureRisk === null ? null : Math.round(100 - ippureRisk),
+    reasons: reasons,
+    raw: { ippureRisk: ippureRisk, ipapiAbuser: ipapiRisk, proxycheckRisk: proxyRisk }
+  };
 }
 
 function toneColor(tone, colors) {
