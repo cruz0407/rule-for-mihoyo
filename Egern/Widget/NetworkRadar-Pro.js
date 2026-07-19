@@ -49,7 +49,7 @@ export default async function (ctx) {
   const LATENCY_TIMEOUT = 2000;
   const POLICY_PROBE_TIMEOUT = 1800;
   const POLICY_PROBE_BATCH_SIZE = 6;
-  const VERSION = "1.3.3";
+  const VERSION = "1.3.4";
   const FORCE_LOCAL_MAINLAND = true;
 
   const servicePolicyCache = {};
@@ -2028,10 +2028,10 @@ export default async function (ctx) {
                 ),
                 row(
                   [
-                    text(shortISP(exit.isp), 5.45, "medium", C.subtext, {
+                    text(shortISP(exit.isp) + " \u00b7 \u843d\u5730 " + displayIP(exit.ip), 5.15, "medium", C.subtext, {
                       flex: 1,
                       maxLines: 1,
-                      minScale: 0.58
+                      minScale: 0.42
                     }),
                     pill(nodeProfile.typeLabel, nodeTypeTone, nodeTypeFill, {
                       padding: [1, 3]
@@ -2336,26 +2336,66 @@ export default async function (ctx) {
     return C.tileBg;
   }
 
-  function purityMetric(symbol, label, value, tone) {
+  function footerStripCell(symbol, label, value, tone, extra) {
     const color = purityTone(tone);
+    const options = extra || {};
     return row(
       [
-        image(symbol, color, 7, 7),
+        image(symbol, color, options.iconSize || 7, options.iconSize || 7),
         col(
           [
-            text(label, 4.15, "medium", C.muted, { maxLines: 1, minScale: 0.65 }),
-            text(value, 5.35, "semibold", color, { maxLines: 1, minScale: 0.48 })
+            text(label, options.labelSize || 4.05, "medium", C.muted, {
+              maxLines: 1,
+              minScale: options.labelMinScale || 0.5
+            }),
+            text(value, options.valueSize || 5.2, "semibold", color, {
+              maxLines: 1,
+              minScale: options.valueMinScale || 0.42
+            })
           ],
           { flex: 1, gap: 0 }
         )
       ],
+      Object.assign(
+        {
+          flex: 1,
+          height: 31,
+          padding: [2, 3],
+          gap: 2,
+          backgroundColor: options.backgroundColor || C.tileBg,
+          borderRadius: 6
+        },
+        options.style || {}
+      )
+    );
+  }
+
+  function footerScoreCell(scoreText, detailText, tone, detailTone) {
+    return col(
+      [
+        row(
+          [
+            image("shield.checkerboard", tone, 8, 8),
+            text(scoreText, 6.4, "semibold", tone, {
+              flex: 1,
+              maxLines: 1,
+              minScale: 0.52
+            })
+          ],
+          { gap: 2, alignItems: "center" }
+        ),
+        text(detailText, 4.55, "medium", detailTone, {
+          maxLines: 1,
+          minScale: 0.48
+        })
+      ],
       {
-        flex: 1,
-        height: 19,
-        padding: [0, 2],
-        gap: 2,
-        backgroundColor: C.tileBg,
-        borderRadius: 5
+        width: 91,
+        height: 31,
+        padding: [2, 3],
+        gap: 1,
+        backgroundColor: purityFill(purityRating.tone),
+        borderRadius: 6
       }
     );
   }
@@ -2365,12 +2405,10 @@ export default async function (ctx) {
     const riskTone = purityRating.riskLabel.includes("\u9ad8") ? C.red :
       purityRating.riskLabel.includes("\u4e2d") ? C.amber :
       purityRating.available ? C.green : C.muted;
-    const riskFill = purityRating.riskLabel.includes("\u9ad8") ? C.redSoft :
-      purityRating.riskLabel.includes("\u4e2d") ? C.amberSoft :
-      purityRating.available ? C.greenSoft : C.tileBg;
     const scoreText = purityRating.available
       ? purityRating.gradeLabel + " \u00b7 " + purityRating.score + "\u5206"
       : "\u7eaf\u51c0\u5ea6\u5f85\u6838\u9a8c";
+    const scoreDetail = purityRating.riskLabel + " \u00b7 " + purityRating.sourceLabel;
     const ippureValue = purityRating.ippureScore === null ? "--" : purityRating.ippureScore + "/100";
     const ippureTone = purityRating.ippureScore === null ? "muted" :
       purityRating.ippureScore >= 80 ? "green" :
@@ -2379,54 +2417,35 @@ export default async function (ctx) {
     const abuserTone = purityRating.abuserLabel === "--" ? "muted" :
       abuserLower.includes("high") ? "red" :
       (abuserLower.includes("elevated") || abuserLower.includes("moderate")) ? "amber" : "green";
-    const sourceTone = !purityRating.available ? C.muted : purityRating.estimated ? C.amber : C.blue;
-    const sourceFill = !purityRating.available ? C.tileBg : purityRating.estimated ? C.amberSoft : C.blueSoft;
     const location = clean(exit.city) || clean(exit.country) || "\u672a\u77e5\u5730\u533a";
     const latency = proxyLatency.ok ? proxyLatency.ms + "ms" : "--";
-    const summary = shortISP(exit.isp) + " \u00b7 " + location + " \u00b7 " + latency;
+    const servicePassed = mediaPassed + aiPassed;
 
     return card(
       [
         row(
           [
-            image("shield.checkerboard", gradeTone, 9, 9),
-            text(scoreText, 7.5, "semibold", gradeTone, { flex: 1, maxLines: 1, minScale: 0.72 }),
-            pill(purityRating.riskLabel, riskTone, riskFill, { padding: [1, 3] }),
-            pill(
-              purityRating.sourceLabel,
-              sourceTone,
-              sourceFill,
-              { padding: [1, 3] }
+            footerScoreCell(scoreText, scoreDetail, gradeTone, riskTone),
+            footerStripCell("checkmark.shield.fill", "IPPure", ippureValue, ippureTone),
+            footerStripCell("building.2.fill", "IP\u5c5e\u6027", purityRating.ipType.label, purityRating.ipType.tone),
+            footerStripCell("exclamationmark.shield.fill", "Abuser", purityRating.abuserLabel, abuserTone),
+            footerStripCell(
+              "network",
+              shortISP(exit.isp) + " \u00b7 " + latency,
+              location + " \u00b7 " + servicePassed + "/12",
+              "blue",
+              {
+                labelMinScale: 0.42,
+                valueMinScale: 0.38,
+                style: { width: 88, flex: 0 },
+                backgroundColor: C.blueSoft
+              }
             )
           ],
-          { height: 14, gap: 3, alignItems: "center" }
-        ),
-        row(
-          [
-            purityMetric("checkmark.shield.fill", "IPPure", ippureValue, ippureTone),
-            purityMetric("building.2.fill", "IP\u5c5e\u6027", purityRating.ipType.label, purityRating.ipType.tone),
-            purityMetric(
-              "exclamationmark.shield.fill",
-              "Abuser",
-              purityRating.abuserLabel,
-              abuserTone
-            )
-          ],
-          { height: 19, gap: 2 }
-        ),
-        row(
-          [
-            text(summary, 5.25, "medium", C.subtext, { flex: 1, maxLines: 1, minScale: 0.52 }),
-            text("\u5a92\u4f53 " + mediaPassed + "/6 \u00b7 AI " + aiPassed + "/6", 5.25, "medium", C.subtext, {
-              maxLines: 1,
-              minScale: 0.62,
-              textAlign: "right"
-            })
-          ],
-          { height: 11, gap: 4, alignItems: "center" }
+          { height: 31, gap: 2, alignItems: "center" }
         )
       ],
-      { height: 58, padding: [4, 5], gap: 3 }
+      { height: 41, padding: [4, 5], gap: 0 }
     );
   }
 
