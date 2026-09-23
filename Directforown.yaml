@@ -6,4 +6,4 @@ payload:
   - '+.velota.com'
   - '+.znzmo.com'
   - '+.rtnsvc.com'
-  - '+.bambulab.com'
+  - 'cn.mqtt.bambulab.com'
